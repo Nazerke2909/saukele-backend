@@ -1,0 +1,161 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  COUPLE
+  FAMILY_MEMBER
+  GUEST
+  MODERATOR
+}
+
+enum KinshipRank {
+  ATA_ANA
+  ZHIEN_ZHARAP
+  SHAKYRT
+}
+
+enum PoolStatus {
+  PENDING
+  FUNDING
+  FUNDED
+  PURCHASED
+  DELIVERED
+}
+
+enum ContributionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id             Int       @id @default(autoincrement())
+  email          String    @unique
+  hashedPassword String    @map("hashed_password")
+  role           Role
+  fullName       String    @map("full_name")
+  isBlocked      Boolean   @default(false) @map("is_blocked")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  weddingsAsCouple  Wedding[]      @relation("coupleWeddings")
+  familyMemberships FamilyTree[]   @relation("familyMember")
+  contributions     Contribution[]
+  auditLogs         AuditLog[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Wedding {
+  id        Int      @id @default(autoincrement())
+  coupleId  Int      @map("couple_id")
+  title     String
+  date      DateTime
+  location  String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  couple     User        @relation("coupleWeddings", fields: [coupleId], references: [id])
+  giftPools  GiftPool[]
+  familyTree FamilyTree[]
+
+  @@index([coupleId])
+  @@map("weddings")
+}
+
+model FamilyTree {
+  id             Int         @id @default(autoincrement())
+  weddingId      Int         @map("wedding_id")
+  memberId       Int         @map("member_id")
+  ancestorId     Int?        @map("ancestor_id")
+  kinshipRank    KinshipRank @map("kinship_rank")
+  customDistance Int?        @map("custom_distance")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  wedding  Wedding @relation(fields: [weddingId], references: [id])
+  member   User    @relation("familyMember", fields: [memberId], references: [id])
+  ancestor User?   @relation("familyAncestor", fields: [ancestorId], references: [id])
+
+  @@unique([weddingId, memberId])
+  @@index([weddingId, kinshipRank])
+  @@map("family_trees")
+}
+
+model GiftPool {
+  id              Int        @id @default(autoincrement())
+  weddingId       Int        @map("wedding_id")
+  name            String
+  description     String?
+  targetKzt       Int        @map("target_kzt")
+  remainingTarget Int        @map("remaining_target")
+  totalFunded     Int        @default(0) @map("total_funded")
+  familyOnly      Boolean    @default(false) @map("family_only")
+  status          PoolStatus @default(PENDING)
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  wedding       Wedding        @relation(fields: [weddingId], references: [id])
+  contributions Contribution[]
+
+  @@index([weddingId, status])
+  @@map("gift_pools")
+}
+
+model Contribution {
+  id               Int                @id @default(autoincrement())
+  guestId          Int                @map("guest_id")
+  poolId           Int                @map("pool_id")
+  amountKzt        Int                @map("amount_kzt")
+  originalAmount   Float              @map("original_amount")
+  originalCurrency String             @map("original_currency")
+  exchangeRate     Float              @map("exchange_rate")
+  lockedAt         DateTime           @default(now()) @map("locked_at")
+  status           ContributionStatus @default(PENDING)
+  paymentIntentId  String?            @unique @map("payment_intent_id")
+  createdAt        DateTime           @default(now()) @map("created_at")
+
+  guest User     @relation(fields: [guestId], references: [id])
+  pool  GiftPool @relation(fields: [poolId], references: [id])
+
+  @@index([poolId, status])
+  @@index([guestId])
+  @@map("contributions")
+}
+
+model ExchangeRate {
+  id           Int       @id @default(autoincrement())
+  currencyFrom String    @map("currency_from")
+  currencyTo   String    @map("currency_to")
+  rate         Float
+  validFrom    DateTime  @default(now()) @map("valid_from")
+  validUntil   DateTime? @map("valid_until")
+  source       String    @default("manual")
+
+  @@unique([currencyFrom, validFrom])
+  @@map("exchange_rates")
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   Int      @map("entity_id")
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}

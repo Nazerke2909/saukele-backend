@@ -1,0 +1,222 @@
+openapi: "3.0.3"
+info:
+  title: Saukele API
+  version: "1.0.0"
+  description: Wedding gift management system
+
+servers:
+  - url: http://localhost:3000
+    description: Local dev
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: couple@example.com
+        password:
+          type: string
+          format: password
+          example: "Str0ng!Pass"
+    LoginResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIs...
+        refreshToken:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIs...
+    CreateWeddingRequest:
+      type: object
+      required: [title, date]
+      properties:
+        title:
+          type: string
+          example: "Айнұр & Бекзат тойы"
+        date:
+          type: string
+          format: date-time
+          example: "2025-07-15T12:00:00Z"
+        location:
+          type: string
+          example: "Алматы, Қазақстан"
+    CreateWeddingResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        coupleId:
+          type: integer
+          example: 2
+        title:
+          type: string
+        date:
+          type: string
+        location:
+          type: string
+        couple:
+          type: object
+          properties:
+            id:
+              type: integer
+            fullName:
+              type: string
+            email:
+              type: string
+    CreateContributionRequest:
+      type: object
+      required: [poolId, originalAmount, originalCurrency, idempotencyKey]
+      properties:
+        poolId:
+          type: integer
+          example: 1
+        originalAmount:
+          type: number
+          example: 100
+        originalCurrency:
+          type: string
+          example: USD
+        idempotencyKey:
+          type: string
+          example: "uniq-key-12345"
+    CreateContributionResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        guestId:
+          type: integer
+        poolId:
+          type: integer
+        amountKzt:
+          type: integer
+        originalAmount:
+          type: number
+        originalCurrency:
+          type: string
+        exchangeRate:
+          type: number
+        status:
+          type: string
+    PaginatedContributions:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateContributionResponse"
+        total:
+          type: integer
+          example: 42
+        limit:
+          type: integer
+          example: 10
+        offset:
+          type: integer
+          example: 0
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid credentials
+
+  /weddings:
+    post:
+      tags: [Weddings]
+      summary: Create a wedding (COUPLE or SUPER_ADMIN only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWeddingRequest"
+      responses:
+        "201":
+          description: Wedding created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateWeddingResponse"
+        "403":
+          description: Insufficient role
+
+  /contributions:
+    post:
+      tags: [Contributions]
+      summary: Make a contribution to a gift pool
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateContributionRequest"
+      responses:
+        "201":
+          description: Contribution created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateContributionResponse"
+        "400":
+          description: Pool full or invalid amount
+
+  /contributions/pool/{poolId}:
+    get:
+      tags: [Contributions]
+      summary: List contributions for a pool (paginated)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: poolId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Paginated contributions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedContributions"
