@@ -5,7 +5,7 @@ export const registerSchema = Joi.object({
   password: Joi.string().min(8).max(64).required(),
   firstName: Joi.string().max(50).required(),
   lastName: Joi.string().max(50).required(),
-  role: Joi.string().valid('COUPLE', 'GUEST', 'FAMILY', 'MODERATOR', 'SUPER_ADMIN').optional(),
+  role: Joi.string().valid('COUPLE', 'GUEST', 'FAMILY_MEMBER', 'MODERATOR', 'SUPER_ADMIN').optional(),
 });
 
 export const loginSchema = Joi.object({

@@ -1,21 +1,27 @@
 import dotenv from 'dotenv';
+import { z } from 'zod';
 
 dotenv.config();
 
-const REQUIRED = ['DATABASE_URL', 'JWT_SECRET', 'REFRESH_TOKEN_SECRET', 'REDIS_URL'];
+const envSchema = z.object({
+  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
+  REFRESH_TOKEN_SECRET: z.string().min(16, 'REFRESH_TOKEN_SECRET must be at least 16 characters'),
+  REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
+  PORT: z.coerce.number().int().positive().default(3000),
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  CORS_ORIGIN: z.string().default('http://localhost:3000'),
+});
 
-const missing = REQUIRED.filter((k) => !process.env[k]);
+const parsed = envSchema.safeParse(process.env);
 
-if (missing.length) {
-  console.error(`[FATAL] Missing required env vars: ${missing.join(', ')}`);
+if (!parsed.success) {
+  console.error('[FATAL] Environment validation failed:');
+  for (const issue of parsed.error.issues) {
+    console.error(`  - ${issue.path.join('.')}: ${issue.message}`);
+  }
   process.exit(1);
 }
 
-export const env = {
-  DATABASE_URL: process.env.DATABASE_URL,
-  JWT_SECRET: process.env.JWT_SECRET,
-  REFRESH_TOKEN_SECRET: process.env.REFRESH_TOKEN_SECRET,
-  REDIS_URL: process.env.REDIS_URL,
-  PORT: parseInt(process.env.PORT, 10) || 3000,
-  NODE_ENV: process.env.NODE_ENV || 'development',
-};
+export const env = parsed.data;
+

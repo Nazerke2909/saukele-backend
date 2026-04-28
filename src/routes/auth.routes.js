@@ -7,7 +7,7 @@ import {
   login,
   refresh,
   logout,
-} from '../controllers/authController.js';
+} from '../controller/authController.js';
 
 const router = Router();
 

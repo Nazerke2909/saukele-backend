@@ -16,11 +16,16 @@ export const register = async (req, res) => {
     return res.status(409).json({ error: 'Email already registered' });
   }
 
-  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
   const user = await prisma.user.create({
-    data: { email, passwordHash, firstName, lastName, role: role || 'GUEST' },
-    select: { id: true, email: true, firstName: true, lastName: true, role: true },
+    data: {
+      email,
+      hashedPassword,
+      fullName: `${firstName} ${lastName}`.trim(),
+      role: role || 'GUEST',
+    },
+    select: { id: true, email: true, fullName: true, role: true },
   });
 
   res.status(201).json(user);
@@ -34,7 +39,7 @@ export const login = async (req, res) => {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
 
-  const valid = await bcrypt.compare(password, user.passwordHash);
+  const valid = await bcrypt.compare(password, user.hashedPassword);
   if (!valid) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }

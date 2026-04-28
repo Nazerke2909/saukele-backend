@@ -45,8 +45,9 @@ model User {
   isBlocked      Boolean   @default(false) @map("is_blocked")
   createdAt      DateTime  @default(now()) @map("created_at")
 
-  weddingsAsCouple  Wedding[]      @relation("coupleWeddings")
+    weddingsAsCouple  Wedding[]      @relation("coupleWeddings")
   familyMemberships FamilyTree[]   @relation("familyMember")
+  familyAncestors   FamilyTree[]   @relation("familyAncestor")
   contributions     Contribution[]
   auditLogs         AuditLog[]
 
@@ -70,6 +71,9 @@ model Wedding {
   @@map("weddings")
 }
 
+// Self-referential family tree: ancestor_id references the parent in the hierarchy
+// member_id = the person, ancestor_id = their parent/ancestor (nullable for root)
+// This enables recursive CTE queries to traverse the full hierarchy
 model FamilyTree {
   id             Int         @id @default(autoincrement())
   weddingId      Int         @map("wedding_id")
@@ -77,6 +81,7 @@ model FamilyTree {
   ancestorId     Int?        @map("ancestor_id")
   kinshipRank    KinshipRank @map("kinship_rank")
   customDistance Int?        @map("custom_distance")
+  giftObligation Int?        @map("gift_obligation") // Expected gift amount in KZT
   createdAt      DateTime    @default(now()) @map("created_at")
 
   wedding  Wedding @relation(fields: [weddingId], references: [id])
@@ -85,6 +90,7 @@ model FamilyTree {
 
   @@unique([weddingId, memberId])
   @@index([weddingId, kinshipRank])
+  @@index([weddingId, ancestorId])
   @@map("family_trees")
 }
 
@@ -108,6 +114,8 @@ model GiftPool {
   @@map("gift_pools")
 }
 
+// Currency snapshot model: locks exchange rate at payment time
+// Historical rows are immutable - never updated after creation
 model Contribution {
   id               Int                @id @default(autoincrement())
   guestId          Int                @map("guest_id")
@@ -115,8 +123,8 @@ model Contribution {
   amountKzt        Int                @map("amount_kzt")
   originalAmount   Float              @map("original_amount")
   originalCurrency String             @map("original_currency")
-  exchangeRate     Float              @map("exchange_rate")
-  lockedAt         DateTime           @default(now()) @map("locked_at")
+  exchangeRate     Float              @map("exchange_rate")     // Locked exchange rate at payment time
+  lockedAt         DateTime           @default(now()) @map("locked_at") // Timestamp when rate was locked
   status           ContributionStatus @default(PENDING)
   paymentIntentId  String?            @unique @map("payment_intent_id")
   createdAt        DateTime           @default(now()) @map("created_at")
@@ -159,3 +167,4 @@ model AuditLog {
   @@index([entityType, entityId])
   @@map("audit_logs")
 }
+
