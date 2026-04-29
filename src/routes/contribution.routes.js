@@ -1,8 +1,13 @@
 import { Router } from 'express';
 import asyncHandler from '../utils/asyncHandler.js';
 import auth from '../middleware/auth.js';
-import { createContribution, getContributions } from '../controller/contributionController.js';
-
+import roleCheck from '../middleware/roleCheck.js';
+import {
+  createContribution,
+  getMyContributions,
+  getContributions,
+  deleteContribution,
+} from '../controller/contributionController.js';
 const router = Router();
 
 /**
@@ -33,6 +38,8 @@ const router = Router();
  */
 router.post('/', auth, asyncHandler(createContribution));
 
+router.get('/my', auth, asyncHandler(getMyContributions));
+
 /**
  * @swagger
  * /contributions/pool/{poolId}:
@@ -59,4 +66,7 @@ router.post('/', auth, asyncHandler(createContribution));
  */
 router.get('/pool/:poolId', auth, asyncHandler(getContributions));
 
+router.delete('/:id', auth, roleCheck('SUPER_ADMIN'), asyncHandler(deleteContribution));
+
 export default router;
+

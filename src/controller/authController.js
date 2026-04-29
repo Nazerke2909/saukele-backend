@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/database.js';
 import redisClient from '../config/redis.js';
+import { AppError } from '../middleware/errorHandler.js';
 import {
   BCRYPT_ROUNDS,
   ACCESS_TOKEN_EXPIRY,
@@ -101,3 +102,80 @@ export const logout = async (req, res) => {
 
   res.json({ message: 'Logged out successfully' });
 };
+
+/**
+ * @swagger
+ * /auth/me:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Get current user profile
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current user data
+ *       401:
+ *         description: Not authenticated
+ */
+export const getMe = async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: { id: true, email: true, fullName: true, role: true, createdAt: true },
+  });
+
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
+
+  res.json(user);
+};
+
+/**
+ * @swagger
+ * /auth/profile:
+ *   patch:
+ *     tags: [Auth]
+ *     summary: Update profile (fullName or email)
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               fullName: { type: string, example: "Ainur Kairat" }
+ *               email: { type: string, format: email, example: "new@email.com" }
+ *     responses:
+ *       200:
+ *         description: Profile updated
+ *       409:
+ *         description: Email already taken
+ */
+export const updateProfile = async (req, res) => {
+  const { fullName, email } = req.body;
+
+  if (!fullName && !email) {
+    throw new AppError('Nothing to update — provide fullName or email', 400);
+  }
+
+  if (email) {
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing && existing.id !== req.user.id) {
+      throw new AppError('Email already taken by another user', 409);
+    }
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: req.user.id },
+    data: {
+      ...(fullName && { fullName }),
+      ...(email && { email }),
+    },
+    select: { id: true, email: true, fullName: true, role: true },
+  });
+
+  res.json(updated);
+};
+

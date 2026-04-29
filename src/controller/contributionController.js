@@ -90,6 +90,114 @@ export const createContribution = async (req, res) => {
 };
 
 /**
+ * @swagger
+ * /contributions/my:
+ *   get:
+ *     tags: [Contributions]
+ *     summary: Get my contribution history
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, default: 10 }
+ *       - in: query
+ *         name: cursor
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Paginated list of my contributions
+ */
+export const getMyContributions = async (req, res) => {
+  const limit = Math.min(Math.abs(parseInt(req.query.limit, 10)) || 10, 100);
+  const cursor = req.query.cursor ? parseInt(req.query.cursor, 10) : undefined;
+
+  const contributions = await prisma.contribution.findMany({
+    where: { guestId: req.user.id },
+    take: limit + 1,
+    ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      orderBy: { createdAt: 'desc' },
+    include: {
+      pool: {
+        select: { id: true, name: true, wedding: { select: { title: true } } },
+    },
+    },
+  });
+
+  const hasNextPage = contributions.length > limit;
+  const data = hasNextPage ? contributions.slice(0, limit) : contributions;
+  const nextCursor = hasNextPage ? data[data.length - 1].id : null;
+
+  res.json({ data, pagination: { limit, nextCursor, hasNextPage } });
+};
+
+/**
+ * @swagger
+ * /contributions/{id}:
+ *   delete:
+ *     tags: [Contributions]
+ *     summary: Cancel/delete a contribution (SUPER_ADMIN only)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Contribution cancelled and pool refunded
+ *       403:
+ *         description: Forbidden — admin only
+ *       404:
+ *         description: Contribution not found
+ */
+export const deleteContribution = async (req, res) => {
+  const contributionId = Number(req.params.id);
+
+  const contribution = await prisma.contribution.findUnique({
+    where: { id: contributionId },
+    include: { pool: { select: { id: true } } },
+  });
+
+  if (!contribution) {
+    throw new AppError('Contribution not found', 404);
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const [pool] = await tx.$queryRaw`
+      SELECT id, remaining_target, total_funded, status
+      FROM gift_pools
+      WHERE id = ${contribution.poolId}
+      FOR UPDATE
+    `;
+
+    if (!pool) {
+      throw new AppError('Associated pool not found', 404);
+    }
+
+    // Refund: decrement total, increment remaining
+    await tx.giftPool.update({
+      where: { id: pool.id },
+      data: {
+        totalFunded: { decrement: contribution.amountKzt },
+        remainingTarget: { increment: contribution.amountKzt },
+        status: 'FUNDING',
+      },
+    });
+
+    await tx.contribution.update({
+      where: { id: contributionId },
+      data: { status: 'REFUNDED' },
+    });
+
+    return { message: 'Contribution cancelled and refunded' };
+  });
+
+  res.json(result);
+};
+
+/**
  * Get contributions for a pool with cursor-based pagination
  */
 export const getContributions = async (req, res) => {
@@ -111,7 +219,7 @@ export const getContributions = async (req, res) => {
     where: { poolId },
     take: limit + 1,
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-      orderBy: { createdAt: 'desc' },
+    orderBy: { createdAt: 'desc' },
     include: {
       guest: { select: { id: true, fullName: true } },
     },
