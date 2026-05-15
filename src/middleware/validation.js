@@ -3,8 +3,7 @@ import Joi from 'joi';
 export const registerSchema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().min(8).max(64).required(),
-  firstName: Joi.string().max(50).required(),
-  lastName: Joi.string().max(50).required(),
+  fullName: Joi.string().min(1).max(100).optional(),
   role: Joi.string().valid('COUPLE', 'GUEST', 'FAMILY_MEMBER', 'MODERATOR', 'SUPER_ADMIN').optional(),
 });
 
@@ -15,6 +14,21 @@ export const loginSchema = Joi.object({
 
 export const refreshSchema = Joi.object({
   refreshToken: Joi.string().required(),
+});
+
+export const emailSchema = Joi.object({
+  email: Joi.string().email().required(),
+});
+
+export const verifyEmailSchema = Joi.object({
+  email: Joi.string().email().required(),
+  code: Joi.string().length(6).required(),
+});
+
+export const resetPasswordSchema = Joi.object({
+  email: Joi.string().email().required(),
+  token: Joi.string().hex().length(64).required(),
+  newPassword: Joi.string().min(8).max(64).required(),
 });
 
 const validate = (schema) => (req, res, next) => {

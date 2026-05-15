@@ -1,5 +1,6 @@
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { logAction } from '../service/auditService.js';
 
 const VALID_TRANSITIONS = {
   PENDING: ['FUNDING'],
@@ -8,31 +9,6 @@ const VALID_TRANSITIONS = {
   PURCHASED: ['DELIVERED'],
 };
 
-/**
- * @swagger
- * /pools:
- *   post:
- *     tags: [Pools]
- *     summary: Create a gift pool (COUPLE or SUPER_ADMIN)
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [weddingId, name, targetKzt]
- *             properties:
- *               weddingId: { type: integer, example: 1 }
- *               name: { type: string, example: "Kitchen Set" }
- *               description: { type: string }
- *               targetKzt: { type: integer, example: 500000 }
- *               familyOnly: { type: boolean, default: false }
- *     responses:
- *       201:
- *         description: Pool created
- */
 export const createPool = async (req, res) => {
   const { weddingId, name, description, targetKzt, familyOnly } = req.body;
 
@@ -53,7 +29,7 @@ export const createPool = async (req, res) => {
     throw new AppError('You can only create pools for your own wedding', 403);
   }
 
-  const pool = await prisma.giftPool.create({
+    const pool = await prisma.giftPool.create({
     data: {
       weddingId,
       name,
@@ -65,26 +41,18 @@ export const createPool = async (req, res) => {
     },
   });
 
+  await logAction({
+    userId: req.user.id,
+    action: 'CREATE_POOL',
+    entityType: 'GiftPool',
+    entityId: pool.id,
+    newValue: { weddingId, name, targetKzt, familyOnly },
+    ipAddress: req.ip,
+  });
+
   res.status(201).json(pool);
 };
 
-/**
- * @swagger
- * /pools:
- *   get:
- *     tags: [Pools]
- *     summary: List all pools for a wedding (query ?weddingId=)
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: weddingId
- *         required: true
- *         schema: { type: integer }
- *     responses:
- *       200:
- *         description: Array of pools
- */
 export const listPools = async (req, res) => {
   const weddingId = Number(req.query.weddingId);
 
@@ -101,34 +69,36 @@ export const listPools = async (req, res) => {
     throw new AppError('Wedding not found', 404);
   }
 
+  let whereClause = { weddingId };
+  if (req.user.role === 'GUEST') {
+    whereClause.familyOnly = false;
+  }
+
+  const limit = Math.min(Math.abs(parseInt(req.query.limit, 10)) || 10, 50);
+  const cursor = req.query.cursor ? parseInt(req.query.cursor, 10) : undefined;
+
   const pools = await prisma.giftPool.findMany({
-    where: { weddingId },
+    where: whereClause,
+    take: limit + 1,
+    ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     orderBy: { createdAt: 'desc' },
     include: { _count: { select: { contributions: true } } },
   });
 
-  res.json(pools);
+  const hasNextPage = pools.length > limit;
+  const data = hasNextPage ? pools.slice(0, limit) : pools;
+  const nextCursor = hasNextPage ? data[data.length - 1].id : null;
+
+  res.json({
+    data,
+    pagination: {
+      limit,
+      nextCursor,
+      hasNextPage,
+    },
+  });
 };
 
-/**
- * @swagger
- * /pools/{id}:
- *   get:
- *     tags: [Pools]
- *     summary: Get pool details
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: integer }
- *     responses:
- *       200:
- *         description: Pool details
- *       404:
- *         description: Pool not found
- */
 export const getPool = async (req, res) => {
   const poolId = Number(req.params.id);
 
@@ -144,39 +114,13 @@ export const getPool = async (req, res) => {
     throw new AppError('Gift pool not found', 404);
   }
 
+  if (pool.familyOnly && req.user.role === 'GUEST') {
+    throw new AppError('This pool is for family members only', 403);
+  }
+
   res.json(pool);
 };
 
-/**
- * @swagger
- * /pools/{id}:
- *   put:
- *     tags: [Pools]
- *     summary: Update pool name or target amount
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: integer }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name: { type: string, example: "New Kitchen Set" }
- *               targetKzt: { type: integer, example: 600000 }
- *     responses:
- *       200:
- *         description: Pool updated
- *       403:
- *         description: Forbidden
- *       404:
- *         description: Not found
- */
 export const updatePool = async (req, res) => {
   const poolId = Number(req.params.id);
   const { name, targetKzt } = req.body;
@@ -213,6 +157,11 @@ export const updatePool = async (req, res) => {
     }
   }
 
+    const oldPool = await prisma.giftPool.findUnique({
+    where: { id: poolId },
+    select: { name: true, targetKzt: true, remainingTarget: true },
+  });
+
   const updated = await prisma.giftPool.update({
     where: { id: poolId },
     data: {
@@ -224,30 +173,19 @@ export const updatePool = async (req, res) => {
     },
   });
 
+  await logAction({
+    userId: req.user.id,
+    action: 'UPDATE_POOL',
+    entityType: 'GiftPool',
+    entityId: poolId,
+    oldValue: oldPool,
+    newValue: { name: updated.name, targetKzt: updated.targetKzt, remainingTarget: updated.remainingTarget },
+    ipAddress: req.ip,
+  });
+
   res.json(updated);
 };
 
-/**
- * @swagger
- * /pools/{id}:
- *   delete:
- *     tags: [Pools]
- *     summary: Delete a pool (only if no contributions)
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: integer }
- *     responses:
- *       200:
- *         description: Pool deleted
- *       400:
- *         description: Pool has contributions, cannot delete
- *       403:
- *         description: Forbidden
- */
 export const deletePool = async (req, res) => {
   const poolId = Number(req.params.id);
 
@@ -272,46 +210,66 @@ export const deletePool = async (req, res) => {
     throw new AppError('Cannot delete pool with existing contributions', 400);
   }
 
+    const deletedPool = await prisma.giftPool.findUnique({
+    where: { id: poolId },
+    select: { name: true, targetKzt: true, status: true },
+  });
+
   await prisma.giftPool.delete({ where: { id: poolId } });
+
+  await logAction({
+    userId: req.user.id,
+    action: 'DELETE_POOL',
+    entityType: 'GiftPool',
+    entityId: poolId,
+    oldValue: deletedPool,
+    ipAddress: req.ip,
+  });
 
   res.json({ message: 'Pool deleted successfully' });
 };
 
-/**
- * @swagger
- * /pools/{id}/status:
- *   patch:
- *     tags: [Pools]
- *     summary: Transition pool status (Escrow State Machine)
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: integer }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [status]
- *             properties:
- *               status:
- *                 type: string
- *                 enum: [FUNDING, FUNDED, PURCHASED, DELIVERED]
- *     responses:
- *       200:
- *         description: Status updated
- *       400:
- *         description: Invalid transition
- *       404:
- *         description: Pool not found
- */
+export const purchasePool = async (req, res) => {
+  const poolId = Number(req.params.id);
+
+  const pool = await prisma.giftPool.findUnique({
+    where: { id: poolId },
+    select: { id: true, status: true, totalFunded: true, targetKzt: true, wedding: { select: { coupleId: true } } },
+  });
+
+  if (!pool) {
+    throw new AppError('Gift pool not found', 404);
+  }
+
+  if (pool.wedding.coupleId !== req.user.id && req.user.role !== 'SUPER_ADMIN') {
+    throw new AppError('You can only manage your own pool', 403);
+  }
+
+  if (pool.status !== 'FUNDED') {
+    throw new AppError('Pool must be in FUNDED status to mark as purchased', 400);
+  }
+
+    const updated = await prisma.giftPool.update({
+    where: { id: poolId },
+    data: { status: 'PURCHASED' },
+  });
+
+  await logAction({
+    userId: req.user.id,
+    action: 'STATUS_CHANGE',
+    entityType: 'GiftPool',
+    entityId: poolId,
+    oldValue: { status: 'FUNDED' },
+    newValue: { status: 'PURCHASED' },
+    ipAddress: req.ip,
+  });
+
+  res.json(updated);
+};
+
 export const updatePoolStatus = async (req, res) => {
   const poolId = Number(req.params.id);
-  const { status: newStatus } = req.body;
+  const { status } = req.body;
 
   const pool = await prisma.giftPool.findUnique({
     where: { id: poolId },
@@ -323,20 +281,68 @@ export const updatePoolStatus = async (req, res) => {
   }
 
   if (pool.wedding.coupleId !== req.user.id && req.user.role !== 'SUPER_ADMIN') {
-    throw new AppError('You can only update your own pool', 403);
+    throw new AppError('You can only manage your own pool', 403);
   }
 
-  const allowedTransitions = VALID_TRANSITIONS[pool.status];
-  if (!allowedTransitions || !allowedTransitions.includes(newStatus)) {
+  const allowedNext = VALID_TRANSITIONS[pool.status];
+  if (!allowedNext || !allowedNext.includes(status)) {
     throw new AppError(
-      `Invalid status transition: ${pool.status} -> ${newStatus}. Allowed: ${allowedTransitions?.join(', ') || 'none'}`,
+      `Cannot change status from ${pool.status} to ${status}. Allowed transitions: ${(allowedNext || []).join(', ') || 'none'}`,
       400
     );
   }
 
   const updated = await prisma.giftPool.update({
     where: { id: poolId },
-    data: { status: newStatus },
+    data: { status },
+  });
+
+  await logAction({
+    userId: req.user.id,
+    action: 'STATUS_CHANGE',
+    entityType: 'GiftPool',
+    entityId: poolId,
+    oldValue: { status: pool.status },
+    newValue: { status },
+    ipAddress: req.ip,
+  });
+
+  res.json(updated);
+};
+
+export const deliverPool = async (req, res) => {
+  const poolId = Number(req.params.id);
+
+  const pool = await prisma.giftPool.findUnique({
+    where: { id: poolId },
+    select: { id: true, status: true, wedding: { select: { coupleId: true } } },
+  });
+
+  if (!pool) {
+    throw new AppError('Gift pool not found', 404);
+  }
+
+  if (pool.wedding.coupleId !== req.user.id && req.user.role !== 'SUPER_ADMIN') {
+    throw new AppError('You can only manage your own pool', 403);
+  }
+
+  if (pool.status !== 'PURCHASED') {
+    throw new AppError('Pool must be in PURCHASED status to mark as delivered', 400);
+  }
+
+    const updated = await prisma.giftPool.update({
+    where: { id: poolId },
+    data: { status: 'DELIVERED' },
+  });
+
+  await logAction({
+    userId: req.user.id,
+    action: 'STATUS_CHANGE',
+    entityType: 'GiftPool',
+    entityId: poolId,
+    oldValue: { status: 'PURCHASED' },
+    newValue: { status: 'DELIVERED' },
+    ipAddress: req.ip,
   });
 
   res.json(updated);

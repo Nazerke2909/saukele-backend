@@ -1,6 +1,5 @@
-/**
- * Custom application error with HTTP status code
- */
+import { env } from '../config/env.js';
+
 export class AppError extends Error {
   constructor(message, statusCode = 500, details = null) {
     super(message);
@@ -19,7 +18,6 @@ export const notFound = (req, res, next) => {
 };
 
 export const errorHandler = (err, req, res, next) => {
-  // Handle AppError instances
   if (err instanceof AppError) {
     const body = {
       error: err.message,
@@ -31,7 +29,6 @@ export const errorHandler = (err, req, res, next) => {
     return res.status(err.statusCode).json(body);
   }
 
-  // Handle Joi validation errors
   if (err.isJoi || (err.name === 'ValidationError' && err.details)) {
     return res.status(422).json({
       error: 'Validation failed',
@@ -40,7 +37,6 @@ export const errorHandler = (err, req, res, next) => {
     });
   }
 
-  // Handle Prisma known errors
   if (err.code && err.code.startsWith('P')) {
     switch (err.code) {
       case 'P2002':
@@ -62,7 +58,6 @@ export const errorHandler = (err, req, res, next) => {
     }
   }
 
-  // Handle JSON parse errors
   if (err.type === 'entity.parse.failed') {
     return res.status(400).json({
       error: 'Invalid JSON in request body',
@@ -70,15 +65,15 @@ export const errorHandler = (err, req, res, next) => {
     });
   }
 
-  // Default 500
   const statusCode = err.statusCode || 500;
-  const message = statusCode === 500 ? 'Internal server error' : err.message;
+  const message = statusCode === 500 ? err.message || 'Internal server error' : err.message;
 
   console.error(`[ERROR] ${statusCode} - ${err.message}`);
-  if (process.env.NODE_ENV === 'development') console.error(err.stack);
+  console.error(err.stack);
 
   res.status(statusCode).json({
     error: message,
     statusCode,
+    ...(env.NODE_ENV === 'development' ? { stack: err.stack } : {}),
   });
 };

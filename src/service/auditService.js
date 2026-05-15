@@ -14,4 +14,5 @@ export async function createAuditLog({ userId, action, entityType, entityId, old
   });
 }
 
+export { createAuditLog as logAction };
 export default createAuditLog;

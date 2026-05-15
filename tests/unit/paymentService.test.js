@@ -1,6 +1,5 @@
 import { jest } from '@jest/globals';
 
-// Import the payment service
 let processPayment;
 
 beforeAll(async () => {
@@ -10,7 +9,6 @@ beforeAll(async () => {
 
 describe('Payment Service - Process Payment', () => {
   beforeEach(() => {
-    // Clear module state by reimporting (idempotency store is module-level)
   });
 
   it('should complete payment successfully and return payment intent', async () => {

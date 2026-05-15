@@ -2,7 +2,7 @@ openapi: "3.0.3"
 info:
   title: Saukele API
   version: "1.0.0"
-  description: Wedding gift management system
+  description: Wedding gift management system with family tree, escrow-based pool funding, and currency snapshot locking.
 
 servers:
   - url: http://localhost:3000
@@ -14,7 +14,82 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  # ─────────────────────────────────────
+  # Standard responses (переиспользуемые)
+  # ─────────────────────────────────────
+  responses:
+    BadRequest:
+      description: Bad request — invalid input or business rule violation
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Authentication required — missing or invalid JWT
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Insufficient role permissions
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Resource conflict (e.g. duplicate email)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ValidationError:
+      description: Request body validation failed (Joi)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
   schemas:
+    # ─────────────────────────────
+    # Auth
+    # ─────────────────────────────
+    RegisterRequest:
+      type: object
+      required: [email, password, firstName, lastName]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: "Str0ng!Pass"
+        firstName:
+          type: string
+          example: "Ainur"
+        lastName:
+          type: string
+          example: "Kairat"
+        role:
+          type: string
+          enum: [GUEST, FAMILY_MEMBER, COUPLE, MODERATOR, SUPER_ADMIN]
+          default: "GUEST"
+
     LoginRequest:
       type: object
       required: [email, password]
@@ -22,20 +97,111 @@ components:
         email:
           type: string
           format: email
-          example: couple@example.com
+          example: "couple@example.com"
         password:
           type: string
           format: password
           example: "Str0ng!Pass"
+
     LoginResponse:
       type: object
       properties:
         accessToken:
           type: string
-          example: eyJhbGciOiJIUzI1NiIs...
+          example: "eyJhbGciOiJIUzI1NiIs..."
         refreshToken:
           type: string
-          example: eyJhbGciOiJIUzI1NiIs...
+          example: "eyJhbGciOiJIUzI1NiIs..."
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIs..."
+
+    RefreshResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIs..."
+
+    VerifyEmailRequest:
+      type: object
+      required: [email, code]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        code:
+          type: string
+          minLength: 6
+          maxLength: 6
+          example: "483291"
+
+    EmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+
+    ResetPasswordRequest:
+      type: object
+      required: [email, token, newPassword]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        token:
+          type: string
+          example: "a1b2c3d4e5f6..."
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          example: "NewStr0ng!Pass"
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+          example: "Ainur"
+        lastName:
+          type: string
+          example: "Kairat"
+        email:
+          type: string
+          format: email
+          example: "newemail@example.com"
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        fullName:
+          type: string
+        role:
+          type: string
+        isVerified:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    # ─────────────────────────────
+    # Weddings
+    # ─────────────────────────────
     CreateWeddingRequest:
       type: object
       required: [title, date]
@@ -50,7 +216,8 @@ components:
         location:
           type: string
           example: "Алматы, Қазақстан"
-    CreateWeddingResponse:
+
+        CreateWeddingResponse:
       type: object
       properties:
         id:
@@ -59,6 +226,35 @@ components:
         coupleId:
           type: integer
           example: 2
+        title:
+          type: string
+          example: "Айнұр & Бекзат тойы"
+        date:
+          type: string
+          example: "2025-07-15T12:00:00.000Z"
+        location:
+          type: string
+          example: "Алматы, Қазақстан"
+        couple:
+          type: object
+          properties:
+            id:
+              type: integer
+              example: 2
+            fullName:
+              type: string
+              example: "Айнұр Серікқызы"
+            email:
+              type: string
+              example: "ainur@example.com"
+
+    WeddingResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        coupleId:
+          type: integer
         title:
           type: string
         date:
@@ -74,6 +270,92 @@ components:
               type: string
             email:
               type: string
+
+    PaginatedWeddings:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/WeddingResponse"
+        pagination:
+          $ref: "#/components/schemas/CursorPagination"
+
+    # ─────────────────────────────
+    # Pools
+    # ─────────────────────────────
+    CreatePoolRequest:
+      type: object
+      required: [weddingId, name, targetKzt]
+      properties:
+        weddingId:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: "Kitchen Set"
+        description:
+          type: string
+        targetKzt:
+          type: integer
+          example: 500000
+        familyOnly:
+          type: boolean
+          default: false
+
+        PoolResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        weddingId:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: "Kitchen Set"
+        description:
+          type: string
+          example: "contribute to their new kitchen"
+        targetKzt:
+          type: integer
+          example: 500000
+        remainingTarget:
+          type: integer
+          example: 350000
+        totalFunded:
+          type: integer
+          example: 150000
+        status:
+          type: string
+          enum: [PENDING, FUNDING, FUNDED, PURCHASED, DELIVERED]
+          example: "FUNDING"
+        familyOnly:
+          type: boolean
+          example: false
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-06-01T10:30:00.000Z"
+
+    UpdatePoolRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "Updated Kitchen Set"
+        description:
+          type: string
+        targetKzt:
+          type: integer
+          example: 600000
+        familyOnly:
+          type: boolean
+
+    # ─────────────────────────────
+    # Contributions
+    # ─────────────────────────────
     CreateContributionRequest:
       type: object
       required: [poolId, originalAmount, originalCurrency, idempotencyKey]
@@ -86,10 +368,11 @@ components:
           example: 100
         originalCurrency:
           type: string
-          example: USD
+          example: "USD"
         idempotencyKey:
           type: string
           example: "uniq-key-12345"
+
     CreateContributionResponse:
       type: object
       properties:
@@ -107,30 +390,349 @@ components:
           type: string
         exchangeRate:
           type: number
+        lockedAt:
+          type: string
+          format: date-time
         status:
           type: string
+          enum: [COMPLETED, PENDING, FAILED, REFUNDED]
+
+        ContributionResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        guestId:
+          type: integer
+          example: 3
+        poolId:
+          type: integer
+          example: 1
+        amountKzt:
+          type: integer
+          example: 47050
+        originalAmount:
+          type: number
+          example: 100
+        originalCurrency:
+          type: string
+          example: "USD"
+        exchangeRate:
+          type: number
+          example: 470.5
+        lockedAt:
+          type: string
+          format: date-time
+          example: "2025-06-15T14:22:00.000Z"
+        status:
+          type: string
+          example: "COMPLETED"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-06-15T14:22:00.000Z"
+        guest:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: integer
+              example: 3
+            fullName:
+              type: string
+              example: "Марат Асқарұлы"
+
     PaginatedContributions:
       type: object
       properties:
         data:
           type: array
           items:
-            $ref: "#/components/schemas/CreateContributionResponse"
-        total:
+            $ref: "#/components/schemas/ContributionResponse"
+        pagination:
+          $ref: "#/components/schemas/CursorPagination"
+
+    # ─────────────────────────────
+    # Family Tree
+    # ─────────────────────────────
+    FamilyTreeMember:
+      type: object
+      properties:
+        id:
+          type: integer
+        memberId:
+          type: integer
+        ancestorId:
+          type: integer
+          nullable: true
+        memberName:
+          type: string
+        memberEmail:
+          type: string
+        kinshipRank:
+          type: string
+          enum: [ATA_ANA, ZHIEN_ZHARAP, SHAKYRT]
+        giftObligation:
+          type: integer
+          nullable: true
+        distance:
+          type: integer
+        depth:
+          type: integer
+
+    FamilyTreeResponse:
+      type: object
+      properties:
+        weddingId:
+          type: integer
+        tree:
+          type: array
+          items:
+            $ref: "#/components/schemas/FamilyTreeMember"
+        totalMembers:
+          type: integer
+
+    AddFamilyMemberRequest:
+      type: object
+      required: [memberId]
+      properties:
+        memberId:
+          type: integer
+          example: 3
+        ancestorId:
+          type: integer
+          nullable: true
+          example: 2
+        giftObligation:
+          type: integer
+          example: 50000
+
+    GiftObligation:
+      type: object
+      properties:
+        memberId:
+          type: integer
+        memberName:
+          type: string
+        memberEmail:
+          type: string
+        kinshipRank:
+          type: string
+        giftObligation:
+          type: integer
+          nullable: true
+        contributedKzt:
+          type: integer
+        remainingObligation:
+          type: integer
+          nullable: true
+        depth:
+          type: integer
+
+    GiftObligationsResponse:
+      type: object
+      properties:
+        weddingId:
+          type: integer
+        obligations:
+          type: array
+          items:
+            $ref: "#/components/schemas/GiftObligation"
+        totalMembers:
+          type: integer
+
+    # ─────────────────────────────
+    # Admin & Moderator
+    # ─────────────────────────────
+    UpdateExchangeRateRequest:
+      type: object
+      required: [currencyFrom, currencyTo, rate]
+      properties:
+        currencyFrom:
+          type: string
+          example: "USD"
+        currencyTo:
+          type: string
+          example: "KZT"
+        rate:
+          type: number
+          example: 480.5
+        source:
+          type: string
+          default: "manual"
+
+        AuditLogEntry:
+      type: object
+      properties:
+        id:
           type: integer
           example: 42
+        userId:
+          type: integer
+          example: 1
+        action:
+          type: string
+          example: "UPDATE_EXCHANGE_RATE"
+        entityType:
+          type: string
+          example: "ExchangeRate"
+        entityId:
+          type: integer
+          example: 5
+        oldValue:
+          type: object
+          example: { "rate": 450.0 }
+        newValue:
+          type: object
+          example: { "rate": 470.5 }
+        ipAddress:
+          type: string
+          example: "192.168.1.100"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-06-10T09:15:00.000Z"
+        user:
+          type: object
+          properties:
+            id:
+              type: integer
+              example: 1
+            fullName:
+              type: string
+              example: "Super Admin"
+            email:
+              type: string
+              example: "admin@saukele.kz"
+              
+    PaginatedAuditLog:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
+        pagination:
+          $ref: "#/components/schemas/CursorPagination"
+
+    PaginatedUsers:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserResponse"
+        pagination:
+          $ref: "#/components/schemas/PagePagination"
+
+    # ─────────────────────────────
+    # Pagination
+    # ─────────────────────────────
+    CursorPagination:
+      type: object
+      properties:
         limit:
           type: integer
           example: 10
-        offset:
+        nextCursor:
           type: integer
-          example: 0
+          nullable: true
+          example: 42
+        hasNextPage:
+          type: boolean
+          example: true
+
+    PagePagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 42
+        totalPages:
+          type: integer
+          example: 3
+
+    # ─────────────────────────────
+    # Common
+    # ─────────────────────────────
+        ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "Email already registered"
+        statusCode:
+          type: integer
+          description: HTTP status code
+          example: 409
+        details:
+          type: array
+          items:
+            type: string
+          description: Optional validation error details
+          example: ["Email 'test@test.com' is already in use"]
+
+        MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Email verified successfully"
 
 paths:
+  # ─────────────────────────────────────
+  # Auth
+  # ─────────────────────────────────────
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      description: Creates user account and sends verification code to email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created. Verification code sent to email.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  email:
+                    type: string
+                  fullName:
+                    type: string
+                  role:
+                    type: string
+                  message:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /auth/login:
     post:
       tags: [Auth]
-      summary: Login user
+      summary: Log in and receive JWT tokens
       requestBody:
         required: true
         content:
@@ -139,15 +741,254 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: Tokens issued
+          description: Login successful
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
-          description: Invalid credentials
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh an expired access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: New access token issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke a refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: Verify email with code sent during registration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyEmailRequest"
+      responses:
+        "200":
+          description: Email verified successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/resend-verification:
+    post:
+      tags: [Auth]
+      summary: Resend verification code to email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailRequest"
+      responses:
+        "200":
+          description: Verification code sent to email
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request a password reset link
+      description: If the email exists, a reset link is sent. Always returns 200 to prevent email enumeration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailRequest"
+      responses:
+        "200":
+          description: If the email exists, a reset link has been sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password using token from email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordRequest"
+      responses:
+        "200":
+          description: Password reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /auth/profile:
+    patch:
+      tags: [Auth]
+      summary: Update user profile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ─────────────────────────────────────
+  # Weddings
+  # ─────────────────────────────────────
   /weddings:
+    get:
+      tags: [Weddings]
+      summary: List all weddings (cursor-based pagination)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+          description: Items per page (max 50)
+        - in: query
+          name: cursor
+          schema:
+            type: integer
+          description: Cursor from previous response (nextCursor)
+      responses:
+        "200":
+          description: Paginated wedding list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedWeddings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
     post:
       tags: [Weddings]
       summary: Create a wedding (COUPLE or SUPER_ADMIN only)
@@ -166,13 +1007,344 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreateWeddingResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Insufficient role
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
+  /weddings/{id}:
+    get:
+      tags: [Weddings]
+      summary: Get wedding by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Wedding details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeddingResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      tags: [Weddings]
+      summary: Update wedding (COUPLE or SUPER_ADMIN only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWeddingRequest"
+      responses:
+        "200":
+          description: Wedding updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateWeddingResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      tags: [Weddings]
+      summary: Delete wedding (COUPLE or SUPER_ADMIN only)
+      description: Cannot delete wedding whose pools have contributions.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Wedding deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ─────────────────────────────────────
+  # Pools
+  # ─────────────────────────────────────
+  /pools:
+    post:
+      tags: [Pools]
+      summary: Create a new gift pool (COUPLE or SUPER_ADMIN only)
+      description: First step in escrow state machine. Pool is created in PENDING status.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePoolRequest"
+      responses:
+        "201":
+          description: Pool created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoolResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      tags: [Pools]
+      summary: List all gift pools for a wedding
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: weddingId
+          required: true
+          schema:
+            type: integer
+          description: Filter by wedding ID
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [PENDING, FUNDING, FUNDED, PURCHASED, DELIVERED]
+          description: Filter by pool status
+      responses:
+        "200":
+          description: Array of pools
+          content:
+            application/json:
+              type: array
+              items:
+                $ref: "#/components/schemas/PoolResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /pools/{id}:
+    get:
+      tags: [Pools]
+      summary: Get a gift pool by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Pool details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoolResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      tags: [Pools]
+      summary: Update a gift pool (COUPLE or SUPER_ADMIN only)
+      description: Can only edit PENDING or FUNDING status pools.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePoolRequest"
+      responses:
+        "200":
+          description: Pool updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoolResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      tags: [Pools]
+      summary: Delete a gift pool (COUPLE or SUPER_ADMIN only)
+      description: Only pools without contributions can be deleted.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Pool deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /pools/{id}/purchase:
+    patch:
+      tags: [Pools]
+      summary: Mark a funded pool as purchased (COUPLE or SUPER_ADMIN only)
+      description: "Escrow step 3: FUNDED → PURCHASED"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Pool marked as purchased
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoolResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /pools/{id}/deliver:
+    patch:
+      tags: [Pools]
+      summary: Mark a purchased pool as delivered (COUPLE or SUPER_ADMIN only)
+      description: "Escrow step 4 (final): PURCHASED → DELIVERED"
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Pool marked as delivered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoolResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ─────────────────────────────────────
+  # Contributions
+  # ─────────────────────────────────────
   /contributions:
     post:
       tags: [Contributions]
-      summary: Make a contribution to a gift pool
+      summary: Make a contribution to a gift pool (locks exchange rate)
       security:
         - bearerAuth: []
       requestBody:
@@ -183,18 +1355,54 @@ paths:
               $ref: "#/components/schemas/CreateContributionRequest"
       responses:
         "201":
-          description: Contribution created
+          description: Contribution created with locked exchange rate
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreateContributionResponse"
         "400":
-          description: Pool full or invalid amount
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /contributions/my:
+    get:
+      tags: [Contributions]
+      summary: Get current user's contributions
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+        - in: query
+          name: cursor
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Paginated list of user's contributions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedContributions"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
   /contributions/pool/{poolId}:
     get:
       tags: [Contributions]
-      summary: List contributions for a pool (paginated)
+      summary: List contributions for a pool (cursor-based pagination)
       security:
         - bearerAuth: []
       parameters:
@@ -208,11 +1416,11 @@ paths:
           schema:
             type: integer
             default: 10
-        - name: offset
+        - name: cursor
           in: query
           schema:
             type: integer
-            default: 0
+          description: Cursor from previous response (nextCursor)
       responses:
         "200":
           description: Paginated contributions
@@ -220,3 +1428,511 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PaginatedContributions"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /contributions/{id}:
+    delete:
+      tags: [Contributions]
+      summary: Delete a contribution (SUPER_ADMIN only)
+      description: Refunds the contribution amount to the pool.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description:
+            /contributions/{id}:
+    delete:
+      tags: [Contributions]
+      summary: Delete a contribution (SUPER_ADMIN only)
+      description: Refunds the contribution amount to the pool.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Contribution cancelled and refunded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ─────────────────────────────────────
+  # Family Tree
+  # ─────────────────────────────────────
+  /family/{weddingId}/tree:
+    get:
+      tags: [Family Tree]
+      summary: Get full family tree hierarchy with recursive structure
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: weddingId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Family tree hierarchy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FamilyTreeResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /family/{weddingId}/obligations:
+    get:
+      tags: [Family Tree]
+      summary: Get gift obligations for all family members
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: weddingId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Gift obligations by kinship rank
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GiftObligationsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /family/{weddingId}/member:
+    post:
+      tags: [Family Tree]
+      summary: Add a family member to the wedding tree
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: weddingId
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddFamilyMemberRequest"
+      responses:
+        "201":
+          description: Family member added
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /family/{weddingId}/member/{memberId}:
+    delete:
+      tags: [Family Tree]
+      summary: Remove a family member from the tree
+      description: Cannot remove a member who has descendants. Re-assign their ancestorId first.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: weddingId
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: memberId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Member removed from tree
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /family/{weddingId}/remind:
+    post:
+      tags: [Family Tree]
+      summary: Send gift obligation reminder emails to family members
+      description: Sends reminders to all family members with outstanding gift obligations.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: weddingId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Reminders sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  sentCount:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ─────────────────────────────────────
+  # Admin
+  # ─────────────────────────────────────
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: List all users with optional filters
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+        - in: query
+          name: role
+          schema:
+            type: string
+            enum: [GUEST, FAMILY_MEMBER, COUPLE, MODERATOR, SUPER_ADMIN]
+        - in: query
+          name: isBlocked
+          schema:
+            type: string
+            enum: ["true", "false"]
+      responses:
+        "200":
+          description: Paginated user list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedUsers"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/users/{id}:
+    delete:
+      tags: [Admin]
+      summary: Delete a user (SUPER_ADMIN only)
+      description: Anonymizes their contributions and removes them from family trees. Cannot delete yourself.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/exchange-rates:
+    put:
+      tags: [Admin]
+      summary: Set a new exchange rate
+      description: Expires the current active rate and inserts a new one. Logged in audit trail.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateExchangeRateRequest"
+      responses:
+        "201":
+          description: Exchange rate created
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/audit-log:
+    get:
+      tags: [Admin]
+      summary: View full audit log with filters
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+        - in: query
+          name: cursor
+          schema:
+            type: integer
+        - in: query
+          name: action
+          schema:
+            type: string
+        - in: query
+          name: entityType
+          schema:
+            type: string
+        - in: query
+          name: userId
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Paginated audit log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedAuditLog"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /admin/moderators/{userId}/promote:
+    patch:
+      tags: [Admin]
+      summary: Toggle MODERATOR role for a user
+      description: If user is currently MODERATOR, demotes to COUPLE. If not, promotes to MODERATOR.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ─────────────────────────────────────
+  # Moderator
+  # ─────────────────────────────────────
+  /moderator/contributions/flagged:
+    get:
+      tags: [Moderator]
+      summary: View flagged contributions (FAILED or PENDING status)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+        - in: query
+          name: cursor
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Paginated flagged contributions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedContributions"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /moderator/users/{id}/block:
+    patch:
+      tags: [Moderator]
+      summary: Toggle block/unblock for a user
+      description: Cannot block SUPER_ADMIN or yourself.
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User block status toggled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    $ref: "#/components/schemas/UserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /moderator/audit-log:
+    get:
+      tags: [Moderator]
+      summary: View own moderator audit log
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+        - in: query
+          name: cursor
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Paginated audit log for the current moderator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedAuditLog"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ─────────────────────────────────────
+  # Health
+  # ─────────────────────────────────────
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check endpoint
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  timestamp:
+                    type: string
+                    format: date-time
+        "500":
+          $ref: "#/components/responses/InternalError"

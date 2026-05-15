@@ -7,33 +7,25 @@ const RANK_THRESHOLDS = [
 ];
 
 export async function computeKinshipRank(weddingId, memberId) {
-  const rows = await prisma.$queryRaw`
-    WITH RECURSIVE family_cte AS (
-      SELECT
-        member_id,
-        ancestor_id,
-        1 AS depth
-      FROM family_trees
-      WHERE wedding_id = ${weddingId} AND member_id = ${memberId}
+  const allMembers = await prisma.familyTree.findMany({
+    where: { weddingId },
+    select: { memberId: true, ancestorId: true },
+  });
 
-      UNION ALL
+  let distance = 0;
+  let currentId = memberId;
+  const visited = new Set();
 
-      SELECT
-        ft.member_id,
-        ft.ancestor_id,
-        cte.depth + 1
-      FROM family_trees ft
-      INNER JOIN family_cte cte ON ft.member_id = cte.ancestor_id
-      WHERE ft.wedding_id = ${weddingId}
-    )
-    SELECT MIN(depth) AS distance
-    FROM family_cte
-    WHERE member_id = ${memberId} AND depth IS NOT NULL
-  `;
+  while (currentId !== null && !visited.has(currentId)) {
+    visited.add(currentId);
+    const member = allMembers.find(m => m.memberId === currentId);
+    if (!member) break;
+    if (member.ancestorId === null) break;
+    currentId = member.ancestorId;
+    distance++;
+  }
 
-  const distance = rows[0]?.distance ?? null;
-
-  if (distance === null) return null;
+  if (distance === 0) return null;
 
   for (const { rank, maxDistance } of RANK_THRESHOLDS) {
     if (distance <= maxDistance) return rank;

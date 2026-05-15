@@ -1,6 +1,5 @@
 import { jest } from '@jest/globals';
 
-// Mock all external dependencies
 jest.unstable_mockModule('../../src/config/database.js', () => ({
   default: {
     $transaction: jest.fn(),
@@ -41,11 +40,7 @@ jest.unstable_mockModule('../../src/config/redis.js', () => ({
   },
 }));
 
-// Integration tests for contribution transaction atomicity
-// These test the business logic guards that prevent overselling and double-spending
-
 describe('Contribution Transaction Atomicity', () => {
-  // Test the mathematical guards that prevent overselling
   describe('Pool Capacity Guards', () => {
     it('should reject contribution exceeding remaining target', () => {
       const remainingTarget = 30000;
@@ -96,11 +91,9 @@ describe('Contribution Transaction Atomicity', () => {
       const processedKeys = new Set();
       const key = 'test-uniq-key';
 
-      // First request
       processedKeys.add(key);
       expect(processedKeys.has(key)).toBe(true);
 
-      // Second request with same key
       expect(processedKeys.has(key)).toBe(true);
       expect(processedKeys.size).toBe(1);
     });
@@ -116,11 +109,9 @@ describe('Contribution Transaction Atomicity', () => {
         lockedAt: new Date('2025-01-15T10:00:00Z'),
       };
 
-      // Simulate that the exchange rate later changes
       const newRate = 480.0;
       const recalculatedKzt = Math.round(contribution.originalAmount * newRate);
 
-      // The locked amount should stay the same
       expect(contribution.amountKzt).not.toBe(recalculatedKzt);
       expect(contribution.amountKzt).toBe(47050);
     });
@@ -133,13 +124,10 @@ describe('Contribution Transaction Atomicity', () => {
         exchangeRate: 500.0,
       };
 
-      // Once created, the fields should never change
       const immutable = { ...original };
 
-      // Simulate external rate update
       immutable.exchangeRate = 480.0;
 
-      // Original should remain unchanged
       expect(original.exchangeRate).toBe(500.0);
       expect(original.amountKzt).toBe(50000);
     });

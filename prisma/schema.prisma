@@ -5,6 +5,17 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+
+  //  ПУЛ СОЕДИНЕНИЙ
+  // ──────────────────
+  // connection_limit — количество одновременных соединений в пуле (по умолчанию 20).
+  // pool_timeout      — таймаут ожидания свободного соединения из пула (сек; по умолч. 10).
+  //
+  // Параметры задаются в DATABASE_URL через query-параметры:
+  //   DATABASE_URL=postgresql://user:pass@host:5432/db?connection_limit=20&pool_timeout=10
+  //
+  // При отсутствии параметров в URL значения подставляются автоматически
+  // в src/config/database.js (функция buildPoolConfig).
 }
 
 enum Role {
@@ -43,9 +54,17 @@ model User {
   role           Role
   fullName       String    @map("full_name")
   isBlocked      Boolean   @default(false) @map("is_blocked")
+
+  emailVerified  Boolean   @default(false) @map("email_verified")
+  verificationCode String? @map("verification_code")
+  resetToken     String?   @map("reset_token")
+  resetTokenExp  DateTime? @map("reset_token_exp")
+
+  refreshTokenHash String? @map("refresh_token_hash")
+
   createdAt      DateTime  @default(now()) @map("created_at")
 
-    weddingsAsCouple  Wedding[]      @relation("coupleWeddings")
+  weddingsAsCouple  Wedding[]      @relation("coupleWeddings")
   familyMemberships FamilyTree[]   @relation("familyMember")
   familyAncestors   FamilyTree[]   @relation("familyAncestor")
   contributions     Contribution[]

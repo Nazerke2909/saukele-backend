@@ -1,35 +1,38 @@
-import { createClient } from 'redis';
+import Redis from 'ioredis';
+import { env } from './env.js';
 
-/**
- * Initialize Redis client.
- * Connection is deferred to avoid top-level await issues.
- * Use connectRedis() before using the client.
- */
-const redisClient = createClient({ url: process.env.REDIS_URL });
+const redisClient = new Redis(env.REDIS_URL);
 
-redisClient.on('error', (err) => console.error('[REDIS] Error:', err));
+redisClient.on('error', (err) => {
+  console.warn('[REDIS] Redis недоступен, используется in-memory fallback');
+});
 
 let connected = false;
 
 export async function connectRedis() {
-  if (!connected) {
-await redisClient.connect();
+  if (connected) return redisClient;
+  try {
+    await redisClient.ping();
     connected = true;
     console.log('[REDIS] Connected');
+  } catch (err) {
+    console.warn('[REDIS] Не удалось подключиться, продолжаем без Redis');
   }
   return redisClient;
 }
 
-const shutdown = async (signal) => {
-  console.log(`[${signal}] Disconnecting Redis...`);
-  if (connected) {
-  await redisClient.quit();
-    connected = false;
-  }
-};
+export function isRedisAvailable() {
+  return connected && redisClient.status === 'ready';
+}
 
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
+export async function disconnectRedis() {
+  if (connected) {
+    try {
+      await redisClient.quit();
+    } catch { /* ignore */ }
+    connected = false;
+    console.log('[REDIS] Disconnected');
+  }
+}
 
 export default redisClient;
-

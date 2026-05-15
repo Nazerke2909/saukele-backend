@@ -1,5 +1,3 @@
-// We test the pure math/logic of exchange rate computation
-// and mock redis/db at the service level
 describe('Exchange Rate Math', () => {
   it('should convert USD to KZT correctly', () => {
     const rate = 470.5;

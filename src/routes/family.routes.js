@@ -2,7 +2,7 @@ import { Router } from 'express';
 import asyncHandler from '../utils/asyncHandler.js';
 import auth from '../middleware/auth.js';
 import roleCheck from '../middleware/roleCheck.js';
-import { getFamilyTree, addFamilyMember, getGiftObligations } from '../controller/familyController.js';
+import { getFamilyTree, addFamilyMember, getGiftObligations, getMyFamilyWedding, getMyRank, removeFamilyMember, sendObligationReminders } from '../controller/familyController.js';
 
 const router = Router();
 
@@ -98,4 +98,99 @@ router.get('/:weddingId/obligations', auth, asyncHandler(getGiftObligations));
  */
 router.post('/:weddingId/member', auth, roleCheck('COUPLE', 'SUPER_ADMIN'), asyncHandler(addFamilyMember));
 
+/**
+ * @swagger
+ * /family/{weddingId}/member/{memberId}:
+ *   delete:
+ *     tags: [Family Tree]
+ *     summary: "Remove a family member from the tree"
+ *     description: "Cannot remove a member who has descendants. Re-assign their ancestorId first."
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: weddingId
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: path
+ *         name: memberId
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: "Member removed from tree"
+ *       400:
+ *         description: "Member has descendants"
+ *       403:
+ *         description: "Insufficient role"
+ *       404:
+ *         description: "Member not found in tree"
+ */
+router.delete('/:weddingId/member/:memberId', auth, roleCheck('COUPLE', 'SUPER_ADMIN'), asyncHandler(removeFamilyMember));
+
+/**
+ * @swagger
+ * /family/{weddingId}/remind:
+ *   post:
+ *     tags: [Family Tree]
+ *     summary: "Send gift obligation reminder emails to all family members with outstanding obligations"
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: weddingId
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: "Reminders sent"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message: { type: string }
+ *                 sentCount: { type: integer }
+ *       403:
+ *         description: "Insufficient role"
+ *       404:
+ *         description: "Wedding not found"
+ */
+router.post('/:weddingId/remind', auth, roleCheck('COUPLE', 'SUPER_ADMIN'), asyncHandler(sendObligationReminders));
+
+/**
+ * @swagger
+ * /family/my-wedding:
+ *   get:
+ *     tags: [Family Tree]
+ *     summary: "Get the wedding I belong to as a family member"
+ *     description: "Returns wedding details with all gift pools for the family member's wedding."
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: "Wedding details"
+ *       404:
+ *         description: "Not a family member of any wedding"
+ */
+router.get('/my-wedding', auth, asyncHandler(getMyFamilyWedding));
+
+/**
+ * @swagger
+ * /family/my-rank:
+ *   get:
+ *     tags: [Family Tree]
+ *     summary: "Get my kinship rank and obligation status"
+ *     description: "Returns rank, minimum obligation based on rank (ATA_ANA=100k, ZHIEN_ZHARAP=50k, SHAKYRT=20k), total contributed, and whether obligation is fulfilled."
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: "Rank and obligation details"
+ *       404:
+ *         description: "Not a family member"
+ */
+router.get('/my-rank', auth, asyncHandler(getMyRank));
+
 export default router;
+

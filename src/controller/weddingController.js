@@ -1,5 +1,6 @@
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { logAction } from '../service/auditService.js';
 
 export const createWedding = async (req, res) => {
   const { title, date, location } = req.body;
@@ -12,6 +13,15 @@ export const createWedding = async (req, res) => {
       location,
     },
     include: { couple: { select: { id: true, fullName: true, email: true } } },
+  });
+
+  await logAction({
+    userId: req.user.id,
+    action: 'CREATE_WEDDING',
+    entityType: 'Wedding',
+    entityId: wedding.id,
+    newValue: { title, date, location },
+    ipAddress: req.ip,
   });
 
   res.status(201).json(wedding);
@@ -33,16 +43,12 @@ export const getWedding = async (req, res) => {
   res.json(wedding);
 };
 
-/**
- * List weddings with cursor-based pagination
- * Cursor is the last visible wedding id
- */
 export const listWeddings = async (req, res) => {
   const limit = Math.min(Math.abs(parseInt(req.query.limit, 10)) || 10, 50);
   const cursor = req.query.cursor ? parseInt(req.query.cursor, 10) : undefined;
 
   const weddings = await prisma.wedding.findMany({
-    take: limit + 1, // Take one extra to know if there's a next page
+    take: limit + 1,
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     orderBy: { createdAt: 'desc' },
     include: {
@@ -78,10 +84,11 @@ export const updateWedding = async (req, res) => {
     throw new AppError('Wedding not found', 404);
   }
 
-  // Only the couple or admin can update
   if (wedding.coupleId !== req.user.id && req.user.role !== 'SUPER_ADMIN') {
     throw new AppError('You can only update your own wedding', 403);
   }
+
+    const oldWedding = await prisma.wedding.findUnique({ where: { id }, select: { title: true, date: true, location: true } });
 
   const updated = await prisma.wedding.update({
     where: { id },
@@ -93,6 +100,16 @@ export const updateWedding = async (req, res) => {
     include: { couple: { select: { id: true, fullName: true, email: true } } },
   });
 
+  await logAction({
+    userId: req.user.id,
+    action: 'UPDATE_WEDDING',
+    entityType: 'Wedding',
+    entityId: id,
+    oldValue: oldWedding,
+    newValue: { title: updated.title, date: updated.date, location: updated.location },
+    ipAddress: req.ip,
+  });
+
   res.json(updated);
 };
 
@@ -101,7 +118,11 @@ export const deleteWedding = async (req, res) => {
 
   const wedding = await prisma.wedding.findUnique({
     where: { id },
-    select: { id: true, coupleId: true },
+    select: {
+      id: true,
+      coupleId: true,
+      _count: { select: { giftPools: true } },
+    },
   });
 
   if (!wedding) {
@@ -111,9 +132,36 @@ export const deleteWedding = async (req, res) => {
   if (wedding.coupleId !== req.user.id && req.user.role !== 'SUPER_ADMIN') {
     throw new AppError('You can only delete your own wedding', 403);
   }
+  const poolsWithContributions = await prisma.giftPool.findFirst({
+    where: {
+      weddingId: id,
+      contributions: { some: {} },
+    },
+    select: { id: true },
+  });
+
+  if (poolsWithContributions) {
+    throw new AppError(
+      'Cannot delete wedding: one or more gift pools have contributions. Delete or refund them first.',
+      400
+    );
+  }
+
+    const oldWedding = await prisma.wedding.findUnique({
+    where: { id },
+    select: { title: true, date: true, location: true },
+  });
 
   await prisma.wedding.delete({ where: { id } });
 
+  await logAction({
+    userId: req.user.id,
+    action: 'DELETE_WEDDING',
+    entityType: 'Wedding',
+    entityId: id,
+    oldValue: oldWedding,
+    ipAddress: req.ip,
+  });
+
   res.json({ message: 'Wedding deleted successfully' });
 };
-

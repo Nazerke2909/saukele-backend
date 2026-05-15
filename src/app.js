@@ -3,22 +3,27 @@ import helmet from 'helmet';
 import cors from 'cors';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
-
+import { bullBoardRouter } from './queue/monitor.js';
 import './config/env.js';
 import { env } from './config/env.js';
-import { connectRedis } from './config/redis.js';
+import { connectRedis, disconnectRedis } from './config/redis.js';
+import prisma, { disconnectPrisma } from './config/database.js';
 import authRoutes from './routes/auth.routes.js';
 import weddingRoutes from './routes/wedding.routes.js';
 import poolRoutes from './routes/pool.routes.js';
 import contributionRoutes from './routes/contribution.routes.js';
 import familyRoutes from './routes/family.routes.js';
 import { notFound, errorHandler } from './middleware/errorHandler.js';
+import adminRoutes from './routes/admin.routes.js';
+import moderatorRoutes from './routes/moderator.routes.js';
 
 const app = express();
 
+app.set('trust proxy', 1);
+
 const corsOrigins = env.CORS_ORIGIN.split(',').map((s) => s.trim());
 
-app.use(helmet());
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors({
     origin: corsOrigins,
@@ -26,7 +31,7 @@ app.use(
   })
 );
 app.use(express.json());
-
+app.use(express.static('frontend'));
 const swaggerSpec = swaggerJsdoc({
   definition: {
     openapi: '3.0.3',
@@ -48,8 +53,8 @@ const swaggerSpec = swaggerJsdoc({
         ErrorResponse: {
           type: 'object',
           properties: {
-            error: { type: 'string' },
-            details: { type: 'array', items: { type: 'string' } },
+            error: { type: 'string', example: 'Email already registered' },
+            details: { type: 'array', items: { type: 'string' }, example: ["Email 'test@test.com' is already in use"] },
           },
         },
         LoginRequest: {
@@ -76,20 +81,20 @@ const swaggerSpec = swaggerJsdoc({
             location: { type: 'string', example: 'Алматы, Қазақстан' },
           },
         },
-        CreateWeddingResponse: {
+                CreateWeddingResponse: {
           type: 'object',
           properties: {
             id: { type: 'integer', example: 1 },
             coupleId: { type: 'integer', example: 2 },
-            title: { type: 'string' },
-            date: { type: 'string' },
-            location: { type: 'string' },
+            title: { type: 'string', example: 'Айнұр & Бекзат тойы' },
+            date: { type: 'string', example: '2025-07-15T12:00:00.000Z' },
+            location: { type: 'string', example: 'Алматы, Қазақстан' },
             couple: {
               type: 'object',
               properties: {
-                id: { type: 'integer' },
-                fullName: { type: 'string' },
-                email: { type: 'string' },
+                id: { type: 'integer', example: 2 },
+                fullName: { type: 'string', example: 'Айнұр Серікқызы' },
+                email: { type: 'string', example: 'ainur@example.com' },
               },
             },
           },
@@ -143,13 +148,13 @@ const swaggerSpec = swaggerJsdoc({
         FamilyTreeMember: {
           type: 'object',
           properties: {
-            id: { type: 'integer' },
-            memberId: { type: 'integer' },
-            ancestorId: { type: 'integer', nullable: true },
-            fullName: { type: 'string' },
-            kinshipRank: { type: 'string' },
-            distance: { type: 'integer' },
-            giftObligation: { type: 'integer', nullable: true },
+            id: { type: 'integer', example: 10 },
+            memberId: { type: 'integer', example: 5 },
+            ancestorId: { type: 'integer', nullable: true, example: 2 },
+            fullName: { type: 'string', example: 'Марат Асқарұлы' },
+            kinshipRank: { type: 'string', example: 'ZHIEN_ZHARAP' },
+            distance: { type: 'integer', example: 2 },
+            giftObligation: { type: 'integer', nullable: true, example: 50000 },
           },
         },
       },
@@ -158,7 +163,7 @@ const swaggerSpec = swaggerJsdoc({
   apis: ['./src/app.js', './src/routes/*.js'],
 });
 
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   customCss: '.swagger-ui .topbar { display: none }',
   customSiteTitle: 'Saukele API Docs',
 }));
@@ -183,19 +188,46 @@ app.use('/weddings', weddingRoutes);
 app.use('/pools', poolRoutes);
 app.use('/contributions', contributionRoutes);
 app.use('/family', familyRoutes);
-
+app.use('/admin', adminRoutes);
+app.use('/moderator', moderatorRoutes);
+app.use('/admin/queues', bullBoardRouter);
 app.use(notFound);
 app.use(errorHandler);
 
 const PORT = env.PORT;
 
-// Connect Redis then start server
+
 connectRedis()
   .then(() => {
-app.listen(PORT, () => {
-  console.log(`[INFO] Server listening on port ${PORT}`);
-  console.log(`[INFO] Swagger docs at http://localhost:${PORT}/api-docs`);
-});
+        const server = app.listen(PORT, () => {
+      console.log(`[INFO] Server listening on port ${PORT}`);
+      console.log(`[INFO] Swagger docs at http://localhost:${PORT}/api-docs`);
+    });
+
+        
+    const gracefulShutdown = async (signal) => {
+      console.log(`\n[${signal}] Shutting down gracefully...`);
+
+      
+      await new Promise((resolve) => {
+        server.close(() => {
+          console.log(`[${signal}] HTTP server closed`);
+          resolve();
+        });
+      });
+
+      await disconnectPrisma();
+
+      await disconnectRedis();
+
+      setTimeout(() => {
+        console.log(`[${signal}] Exiting...`);
+        process.exit(0);
+      }, 1000);
+    };
+
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
   })
   .catch((err) => {
     console.error('[FATAL] Failed to connect to Redis:', err);
