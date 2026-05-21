@@ -1,6 +1,7 @@
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logAction } from '../service/auditService.js';
+import { buildPrivacyFilter } from '../middleware/privacyGuard.js';
 
 export const createWedding = async (req, res) => {
   const { title, date, location } = req.body;
@@ -28,11 +29,12 @@ export const createWedding = async (req, res) => {
 };
 
 export const getWedding = async (req, res) => {
+  const weddingId = Number(req.params.id);
+
   const wedding = await prisma.wedding.findUnique({
-    where: { id: Number(req.params.id) },
+    where: { id: weddingId },
     include: {
       couple: { select: { id: true, fullName: true, email: true } },
-      giftPools: true,
     },
   });
 
@@ -40,7 +42,15 @@ export const getWedding = async (req, res) => {
     throw new AppError('Wedding not found', 404);
   }
 
-  res.json(wedding);
+  // Фильтруем пулы по уровню приватности для текущего пользователя
+  const giftPools = await prisma.giftPool.findMany({
+    where: buildPrivacyFilter(req.user, weddingId, wedding.coupleId),
+  });
+
+  // 🆕 Флаг "моя свадьба" для COUPLE
+  const isMyWedding = req.user.role === 'COUPLE' && wedding.coupleId === req.user.id;
+
+  res.json({ ...wedding, giftPools, isMyWedding });
 };
 
 export const listWeddings = async (req, res) => {
@@ -52,17 +62,28 @@ export const listWeddings = async (req, res) => {
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     orderBy: { createdAt: 'desc' },
     include: {
-      couple: { select: { id: true, fullName: true, email: true } },
+      couple: {
+        select:
+          req.user.role === 'COUPLE' || req.user.role === 'SUPER_ADMIN' || req.user.role === 'MODERATOR'
+            ? { id: true, fullName: true, email: true }
+            : { id: true, fullName: true },
+      },
       _count: { select: { giftPools: true } },
     },
   });
 
-  const hasNextPage = weddings.length > limit;
+    const hasNextPage = weddings.length > limit;
   const data = hasNextPage ? weddings.slice(0, limit) : weddings;
   const nextCursor = hasNextPage ? data[data.length - 1].id : null;
 
+  // 🆕 Добавляем isMyWedding для COUPLE (чтобы показать "My Wedding")
+  const dataWithFlag = data.map(w => ({
+    ...w,
+    isMyWedding: req.user.role === 'COUPLE' && w.couple.id === req.user.id,
+  }));
+
   res.json({
-    data,
+    data: dataWithFlag,
     pagination: {
       limit,
       nextCursor,

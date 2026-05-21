@@ -2,13 +2,14 @@ import { Router } from 'express';
 import asyncHandler from '../utils/asyncHandler.js';
 import auth from '../middleware/auth.js';
 import roleCheck from '../middleware/roleCheck.js';
+import validate, { createContributionSchema } from '../middleware/validation.js';
 import {
   createContribution,
   getMyContributions,
-  getContributions,
-  getContributionsByCurrency,
+  getPoolContributions,
   deleteContribution,
 } from '../controller/contributionController.js';
+
 const router = Router();
 
 /**
@@ -37,7 +38,8 @@ const router = Router();
  *       404:
  *         description: Pool not found
  */
-router.post('/', auth, asyncHandler(createContribution));
+router.post('/', auth, validate(createContributionSchema), asyncHandler(createContribution));
+
 /**
  * @swagger
  * /contributions/my:
@@ -85,53 +87,7 @@ router.get('/my', auth, asyncHandler(getMyContributions));
  *       200:
  *         description: Paginated contributions
  */
-router.get('/pool/:poolId', auth, asyncHandler(getContributions));
-
-/**
- * @swagger
- * /contributions/wedding/{weddingId}/by-currency:
- *   get:
- *     tags: [Contributions]
- *     summary: "Get all contributions for a wedding grouped by original currency"
- *     description: "Returns totals and breakdown per currency. COUPLE or SUPER_ADMIN only."
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: weddingId
- *         required: true
- *         schema: { type: integer }
- *     responses:
- *       200:
- *         description: "Contributions grouped by currency"
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 weddingId: { type: integer }
- *                 totals:
- *                   type: object
- *                   properties:
- *                     totalKzt: { type: integer }
- *                     totalContributions: { type: integer }
- *                     totalPools: { type: integer }
- *                 currencyBreakdown:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       currency: { type: string, example: "USD" }
- *                       totalOriginalAmount: { type: number }
- *                       totalKzt: { type: integer }
- *                       count: { type: integer }
- *                       contributions: { type: array }
- *       403:
- *         description: "Forbidden — not your wedding"
- *       404:
- *         description: "Wedding not found"
- */
-router.get('/wedding/:weddingId/by-currency', auth, asyncHandler(getContributionsByCurrency));
+router.get('/pool/:poolId', auth, asyncHandler(getPoolContributions));
 
 /**
  * @swagger
@@ -158,4 +114,3 @@ router.get('/wedding/:weddingId/by-currency', auth, asyncHandler(getContribution
 router.delete('/:id', auth, roleCheck('SUPER_ADMIN'), asyncHandler(deleteContribution));
 
 export default router;
-

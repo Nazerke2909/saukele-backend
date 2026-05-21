@@ -22,6 +22,7 @@ import {
   resendVerification,
   forgotPassword,
   resetPassword,
+  searchUserByEmail,    // <-- ДОБАВИТЬ ЭТУ СТРОКУ
 } from '../controller/authController.js';
 
 const router = Router();
@@ -297,7 +298,7 @@ router.post('/reset-password', generalLimiter, validate(resetPasswordSchema), as
  *                 email: { type: string }
  *                 fullName: { type: string }
  *                 role: { type: string }
- *                 isVerified: { type: boolean }
+ *                 emailVerified: { type: boolean }
  *                 createdAt: { type: string, format: date-time }
  *       401:
  *         description: "Unauthorized"
@@ -341,5 +342,26 @@ router.get('/me', auth, asyncHandler(getMe));
  *         description: "Email already in use"
  */
 router.patch('/profile', auth, asyncHandler(updateProfile));
+
+/**
+ * @swagger
+ * /auth/search-user:
+ *   get:
+ *     tags: [Auth]
+ *     summary: "Search user by email"
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: email
+ *         required: true
+ *         schema: { type: string, format: email }
+ *     responses:
+ *       200:
+ *         description: "User found"
+ *       404:
+ *         description: "User not found"
+ */
+router.get('/search-user', auth, asyncHandler(searchUserByEmail));
 
 export default router;

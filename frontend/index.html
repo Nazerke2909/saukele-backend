@@ -1,309 +1,78 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Saukele API — Frontend Demo</title>
-  <link rel="stylesheet" href="style.css">
+  <title>Saukele — Wedding Gift Management</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div id="app">
-    <aside id="sidebar">
-      <div class="logo">Saukele</div>
-      <nav id="nav">
-        <button class="nav-btn active" data-section="auth">Auth</button>
-        <button class="nav-btn" data-section="weddings">Weddings</button>
-        <button class="nav-btn" data-section="pools">Pools</button>
-        <button class="nav-btn" data-section="contributions">Contributions</button>
-        <button class="nav-btn" data-section="family">Family Tree</button>
-        <button class="nav-btn" data-section="admin">Admin</button>
-        <button class="nav-btn" data-section="moderator">Moderator</button>
-        <button class="nav-btn" data-section="health">Health</button>
+  <!-- Header -->
+  <header class="header">
+    <div class="container header__inner">
+      <a href="#" class="logo" onclick="showPage('home')">Saukele</a>
+      <nav class="nav" id="mainNav">
+        <a href="#" onclick="showPage('home')">Home</a>
+        <a href="#" onclick="showPage('weddings')">Weddings</a>
+        <a href="#" onclick="showPage('pools')">Gift Pools</a>
+        <a href="#" onclick="showPage('family')">Family Tree</a>
+        <div class="nav__auth" id="authNav">
+          <a href="#" onclick="showPage('login')" id="loginBtn">Login</a>
+          <a href="#" onclick="showPage('register')" class="btn btn--primary btn--sm" id="registerBtn">Register</a>
+          <div class="nav__user" id="userMenu" style="display:none;">
+            <span class="nav__user-name" id="userName"></span>
+            <div class="nav__user-dropdown">
+              <a href="#" onclick="showPage('profile')">Profile</a>
+              <a href="#" onclick="showPage('my-contributions')">My Contributions</a>
+              <a href="#" onclick="showPage('my-rank')">My Rank</a>
+              <a href="#" onclick="showPage('admin-panel')" id="adminLink" style="display:none;">Admin</a>
+              <a href="#" onclick="showPage('moderator-panel')" id="moderatorLink" style="display:none;">Moderator</a>
+              <a href="#" onclick="handleLogout()">Logout</a>
+            </div>
+          </div>
+        </div>
+        <button class="nav__toggle" onclick="toggleMobileMenu()">☰</button>
       </nav>
-      <div id="auth-status">
-        <div id="user-info" class="hidden">
-          <span id="user-name"></span>
-          <span id="user-role" class="role-badge"></span>
-        </div>
-        <button id="logout-btn" class="hidden btn-small">Logout</button>
-      </div>
-    </aside>
+    </div>
+  </header>
 
-    <main id="main-content">
-      <div id="section-auth" class="section active">
-        <h2>Authentication</h2>
-        <div class="card-grid">
-          <div class="card">
-            <h3>Register</h3>
-            <input type="email" id="reg-email" placeholder="Email">
-            <input type="password" id="reg-pass" placeholder="Password">
-            <input id="reg-first" placeholder="First Name">
-            <input id="reg-last" placeholder="Last Name">
-            <select id="reg-role">
-              <option value="GUEST">GUEST</option>
-              <option value="COUPLE">COUPLE</option>
-              <option value="FAMILY_MEMBER">FAMILY_MEMBER</option>
-              <option value="MODERATOR">MODERATOR</option>
-              <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-            </select>
-            <button class="btn" id="btn-register">Register</button>
-            <pre class="result" id="reg-result"></pre>
-          </div>
-          <div class="card">
-            <h3>Login</h3>
-            <input type="email" id="login-email" placeholder="Email">
-            <input type="password" id="login-pass" placeholder="Password">
-            <button class="btn" id="btn-login">Login</button>
-            <pre class="result" id="login-result"></pre>
-          </div>
-          <div class="card">
-            <h3>Verify Email</h3>
-            <input type="email" id="verify-email" placeholder="Email">
-            <input id="verify-code" placeholder="Verification Code">
-            <button class="btn" id="btn-verify">Verify</button>
-            <pre class="result" id="verify-result"></pre>
-          </div>
-          <div class="card">
-            <h3>Refresh Token</h3>
-            <button class="btn" id="btn-refresh">Refresh</button>
-            <pre class="result" id="refresh-result"></pre>
-          </div>
-          <div class="card">
-            <h3>Get Me</h3>
-            <button class="btn" id="btn-get-me">GET /auth/me</button>
-            <pre class="result" id="me-result"></pre>
-          </div>
-          <div class="card">
-            <h3>Forgot / Reset Password</h3>
-            <input type="email" id="forgot-email" placeholder="Email">
-            <button class="btn" id="btn-forgot">Send Reset Link</button>
-            <pre class="result" id="forgot-result"></pre>
-          </div>
-          <div class="card">
-            <h3>Logout</h3>
-            <button class="btn" id="btn-logout">Logout</button>
-            <pre class="result" id="logout-result"></pre>
-          </div>
-        </div>
-      </div>
+  <!-- Main Content -->
+  <main class="main">
+    <div class="container">
+      <div id="pageContent"></div>
+    </div>
+  </main>
 
-      <div id="section-weddings" class="section">
-        <h2>Weddings</h2>
-        <div class="card-grid">
-          <div class="card">
-            <h3>Create Wedding</h3>
-                        <input id="w-title" placeholder="Title">
-            <input id="w-date" type="datetime-local" placeholder="Date">
-            <input id="w-location" placeholder="Location">
-            <button class="btn" id="btn-create-wedding">Create</button>
-            <pre class="result" id="w-create-result"></pre>
-          </div>
-          <div class="card card-wide">
-            <h3>List Weddings</h3>
-            <button class="btn" id="btn-list-weddings">GET /weddings</button>
-            <pre class="result" id="w-list-result"></pre>
-          </div>
-          <div class="card">
-            <h3>Get / Update / Delete Wedding</h3>
-            <input id="w-id" type="number" placeholder="Wedding ID">
-            <div class="btn-group">
-              <button class="btn" id="btn-get-wedding">Get</button>
-              <button class="btn" id="btn-delete-wedding">Delete</button>
-            </div>
-            <pre class="result" id="w-result"></pre>
-          </div>
-        </div>
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <h3>Saukele</h3>
+        <p>Modern wedding gift management platform preserving Kazakh traditions.</p>
       </div>
-
-      <div id="section-pools" class="section">
-        <h2>Gift Pools</h2>
-        <div class="card-grid">
-          <div class="card">
-            <h3>Create Pool</h3>
-            <input id="p-wedding-id" type="number" placeholder="Wedding ID">
-                        <input id="p-name" placeholder="Pool Name">
-            <input id="p-target" type="number" placeholder="Target KZT">
-            <input id="p-desc" placeholder="Description">
-            <label><input type="checkbox" id="p-family"> Family only</label>
-            <button class="btn" id="btn-create-pool">Create</button>
-            <pre class="result" id="p-create-result"></pre>
-          </div>
-                    <div class="card card-wide">
-            <h3>List Pools</h3>
-            <input id="p-list-wedding-id" type="number" placeholder="Wedding ID (required)">
-            <button class="btn" id="btn-list-pools">GET /pools</button>
-            <pre class="result" id="p-list-result"></pre>
-          </div>
-                    <div class="card">
-            <h3>Get / Change Status / Purchase / Deliver / Delete</h3>
-            <input id="p-id" type="number" placeholder="Pool ID">
-            <div>
-              <select id="p-new-status">
-                <option value="FUNDING">→ FUNDING</option>
-                <option value="FUNDED">→ FUNDED</option>
-                <option value="PURCHASED">→ PURCHASED</option>
-                <option value="DELIVERED">→ DELIVERED</option>
-              </select>
-              <button class="btn btn-small" id="btn-update-pool-status">Change Status</button>
-            </div>
-            <div class="btn-group">
-              <button class="btn" id="btn-get-pool">Get</button>
-              <button class="btn" id="btn-purchase-pool">Purchase</button>
-              <button class="btn" id="btn-deliver-pool">Deliver</button>
-              <button class="btn" id="btn-delete-pool">Delete</button>
-            </div>
-            <pre class="result" id="p-result"></pre>
-          </div>
-        </div>
+      <div class="footer__links">
+        <h4>Platform</h4>
+        <a href="#" onclick="showPage('home')">Home</a>
+        <a href="#" onclick="showPage('weddings')">Weddings</a>
+        <a href="#" onclick="showPage('pools')">Gift Pools</a>
       </div>
-
-      <div id="section-contributions" class="section">
-        <h2>Contributions</h2>
-        <div class="card-grid">
-          <div class="card">
-            <h3>Create Contribution</h3>
-            <input id="c-pool-id" type="number" placeholder="Pool ID">
-                        <input id="c-amount" type="number" placeholder="Amount">
-            <select id="c-currency">
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="KZT">KZT</option>
-            </select>
-            <input id="c-idempotency" placeholder="Idempotency Key">
-            <button class="btn" id="btn-create-contribution">Contribute</button>
-            <pre class="result" id="c-create-result"></pre>
-          </div>
-          <div class="card">
-            <h3>My Contributions</h3>
-            <button class="btn" id="btn-my-contributions">GET /contributions/my</button>
-            <pre class="result" id="c-my-result"></pre>
-          </div>
-          <div class="card">
-            <h3>Pool Contributions</h3>
-            <input id="c-pool-filter" type="number" placeholder="Pool ID">
-            <button class="btn" id="btn-pool-contributions">GET /contributions/pool/{id}</button>
-            <pre class="result" id="c-pool-result"></pre>
-          </div>
-        </div>
+      <div class="footer__links">
+        <h4>Support</h4>
+        <a href="#" onclick="showPage('contact')">Contact</a>
+        <a href="#" onclick="showPage('about')">About</a>
       </div>
-
-      <div id="section-family" class="section">
-        <h2>Family Tree</h2>
-        <div class="card-grid">
-          <div class="card card-wide">
-            <h3>Get Family Tree</h3>
-            <input id="ft-wedding" type="number" placeholder="Wedding ID">
-            <button class="btn" id="btn-family-tree">GET /family/{id}/tree</button>
-            <pre class="result" id="ft-tree-result"></pre>
-          </div>
-          <div class="card card-wide">
-            <h3>Get Gift Obligations</h3>
-            <input id="ft-ob-wedding" type="number" placeholder="Wedding ID">
-            <button class="btn" id="btn-gift-obligations">GET /family/{id}/obligations</button>
-            <pre class="result" id="ft-ob-result"></pre>
-          </div>
-          <div class="card">
-            <h3>Add Family Member</h3>
-            <input id="ft-add-wedding" type="number" placeholder="Wedding ID">
-            <input id="ft-member-id" type="number" placeholder="Member User ID">
-            <input id="ft-ancestor-id" type="number" placeholder="Ancestor ID (optional)">
-            <input id="ft-obligation" type="number" placeholder="Gift Obligation KZT">
-            <button class="btn" id="btn-add-family">Add Member</button>
-            <pre class="result" id="ft-add-result"></pre>
-          </div>
-          <div class="card">
-            <h3>Remove Member / Send Reminders</h3>
-            <input id="ft-rm-wedding" type="number" placeholder="Wedding ID">
-            <input id="ft-rm-member" type="number" placeholder="Member ID">
-            <div class="btn-group">
-              <button class="btn" id="btn-remove-family">Remove</button>
-              <button class="btn" id="btn-send-reminders">Send Reminders</button>
-            </div>
-            <pre class="result" id="ft-rm-result"></pre>
-          </div>
-        </div>
+      <div class="footer__info">
+        <p>&copy; 2025 Saukele. All rights reserved.</p>
+        <p>Built with care for Kazakh wedding traditions.</p>
       </div>
+    </div>
+  </footer>
 
-      <div id="section-admin" class="section">
-        <h2>Admin (SUPER_ADMIN only)</h2>
-        <div class="card-grid">
-          <div class="card card-wide">
-            <h3>List Users</h3>
-            <button class="btn" id="btn-list-users">GET /admin/users</button>
-            <pre class="result" id="admin-users-result"></pre>
-          </div>
-          <div class="card">
-            <h3>Delete User</h3>
-            <input id="admin-del-user" type="number" placeholder="User ID">
-            <button class="btn" id="btn-delete-user">Delete</button>
-            <pre class="result" id="admin-del-result"></pre>
-          </div>
-          <div class="card">
-            <h3>Update Exchange Rate</h3>
-            <select id="admin-rate-from">
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-            </select>
-            <span>→</span>
-            <select id="admin-rate-to">
-              <option value="KZT">KZT</option>
-            </select>
-            <input id="admin-rate" type="number" step="0.01" placeholder="Rate" value="470.5">
-            <button class="btn" id="btn-exchange-rate">Set Rate</button>
-            <pre class="result" id="admin-rate-result"></pre>
-          </div>
-          <div class="card card-wide">
-            <h3>Audit Log</h3>
-            <button class="btn" id="btn-audit-log">GET /admin/audit-log</button>
-            <pre class="result" id="admin-audit-result"></pre>
-          </div>
-          <div class="card card-wide">
-            <h3>Promote Moderator</h3>
-            <input id="admin-promote" type="number" placeholder="User ID">
-            <button class="btn" id="btn-promote-mod">Toggle MODERATOR</button>
-            <pre class="result" id="admin-promote-result"></pre>
-          </div>
-          <div class="card card-wide">
-            <h3>Queue Stats</h3>
-            <button class="btn" id="btn-queue-stats">GET /admin/queue-stats</button>
-            <pre class="result" id="admin-queue-result"></pre>
-          </div>
-        </div>
-      </div>
+  <div id="toast" class="toast"></div>
 
-      <div id="section-moderator" class="section">
-        <h2>Moderator</h2>
-        <div class="card-grid">
-          <div class="card card-wide">
-            <h3>Flagged Contributions</h3>
-            <button class="btn" id="btn-flagged">GET /moderator/contributions/flagged</button>
-            <pre class="result" id="mod-flagged-result"></pre>
-          </div>
-          <div class="card">
-            <h3>Block / Unblock User</h3>
-            <input id="mod-block" type="number" placeholder="User ID">
-            <button class="btn" id="btn-block-user">Toggle Block</button>
-            <pre class="result" id="mod-block-result"></pre>
-          </div>
-          <div class="card card-wide">
-            <h3>Own Audit Log</h3>
-            <button class="btn" id="btn-own-audit">GET /moderator/audit-log</button>
-            <pre class="result" id="mod-audit-result"></pre>
-          </div>
-        </div>
-      </div>
-
-      <div id="section-health" class="section">
-        <h2>Health</h2>
-        <div class="card">
-          <h3>Health Check</h3>
-          <button class="btn" id="btn-health">GET /health</button>
-          <pre class="result" id="health-result"></pre>
-        </div>
-      </div>
-    </main>
-  </div>
-
-  <script src="app.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>

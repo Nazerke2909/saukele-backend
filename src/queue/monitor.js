@@ -5,6 +5,35 @@ import { emailQueue, webhookQueue, cronQueue } from './queue.js';
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 
+// Список доступных cron-задач для ручного запуска
+const CRON_TASKS = {
+  deadStockDecay: {
+    label: '🔄 Dead Stock Decay',
+    description: 'Переводит FUNDING пулы без активности >30д в PENDING',
+    data: {},
+  },
+  rateUpdate: {
+    label: '💰 Обновить курсы валют',
+    description: 'Обновляет курсы USD→KZT и EUR→KZT',
+    data: {},
+  },
+  dailyObligationReminders: {
+    label: '📧 Обязательства (ежедневно)',
+    description: 'Отправляет напоминания о gift-обязательствах',
+    data: {},
+  },
+  gentleObligationReminders: {
+    label: '💌 Мягкие напоминания',
+    description: 'Отправляет культурно-зависимые напоминания',
+    data: {},
+  },
+  abandonedCartRecovery: {
+    label: '🛒 Брошенные корзины',
+    description: 'Находит и логирует PENDING взносы старше 24ч',
+    data: {},
+  },
+};
+
 const serverAdapter = new ExpressAdapter();
 serverAdapter.setBasePath('/admin/queues');
 
@@ -176,11 +205,87 @@ export async function removeJob(req, res) {
   res.json({ message: `Job #${jobId} removed` });
 }
 
-export async function logJobResult(queueName, job, status) {
+/**
+ * GET /admin/queue-stats/cron/tasks
+ * Возвращает список доступных cron-задач для ручного запуска
+ */
+export async function getCronTasks(req, res) {
+  const repeatableJobs = await cronQueue.getRepeatableJobs();
+
+  const tasks = Object.entries(CRON_TASKS).map(([type, config]) => {
+    const repeatJob = repeatableJobs.find((rj) => rj.id === type || rj.name === type);
+    return {
+      type,
+      label: config.label,
+      description: config.description,
+      cron: repeatJob?.cron || null,
+      nextRun: repeatJob?.next || null,
+    };
+  });
+
+  res.json(tasks);
+}
+
+/**
+ * POST /admin/queue-stats/cron/trigger/:type
+ * Запускает указанную cron-задачу немедленно
+ */
+export async function triggerCronTask(req, res) {
+  const { type } = req.params;
+  const taskConfig = CRON_TASKS[type];
+
+  if (!taskConfig) {
+    throw new AppError(
+      `Неизвестная задача "${type}". Доступны: ${Object.keys(CRON_TASKS).join(', ')}`,
+      400
+    );
+  }
+
+  const job = await cronQueue.add(
+    { type, data: taskConfig.data },
+    { jobId: `manual-${type}-${Date.now()}` }
+  );
+
+  console.log(`[MANUAL_TRIGGER] Cron task "${type}" triggered manually (job #${job.id})`);
+
+  // Логируем в audit log
   try {
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     await prisma.auditLog.create({
       data: {
-        userId: 0, 
+        userId: req.user.id,
+        action: 'QUEUE_TRIGGER',
+        entityType: 'Queue:cron',
+        entityId: Number(job.id),
+        newValue: {
+          type,
+          triggeredBy: user?.email || 'unknown',
+          timestamp: new Date().toISOString(),
+        },
+      },
+    });
+  } catch (err) {
+    console.error(`[MONITOR] Failed to log trigger:`, err.message);
+  }
+
+  res.json({
+    message: `Задача "${taskConfig.label}" запущена (job #${job.id})`,
+    jobId: job.id,
+  });
+}
+
+export async function logJobResult(queueName, job, status) {
+  try {
+    // Находим первого попавшегося админа/модератора для audit log
+    const systemUser = await prisma.user.findFirst({
+      where: { OR: [{ role: 'SUPER_ADMIN' }, { role: 'MODERATOR' }] },
+      orderBy: { id: 'asc' },
+    });
+    const userId = systemUser?.id ?? 1;
+
+    await prisma.auditLog.create({
+      data: {
+        userId,
         action: `QUEUE_${status.toUpperCase()}`,
         entityType: `Queue:${queueName}`,
         entityId: Number(job.id),

@@ -1,209 +1,141 @@
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import processPayment from '../service/paymentService.js';
-import getExchangeRate from '../service/exchangeService.js';
+import getExchangeRate, { recordExchangeRateSnapshot } from '../service/exchangeService.js';
+import { canAccessPool } from '../middleware/privacyGuard.js';
 import { logAction } from '../service/auditService.js';
-import { queueContributionNotification, queuePoolFundedNotification } from '../queue/producer.js';
-
-const MIN_OBLIGATIONS = {
-  ATA_ANA: 100000,
-  ZHIEN_ZHARAP: 50000,
-  SHAKYRT: 20000,
-};
-
-async function validateFamilyMinimum(userId, pool, amountKzt) {
-  // Check if user is a family member of this wedding
-  const familyMember = await prisma.familyTree.findFirst({
-    where: {
-      memberId: userId,
-      weddingId: pool.weddingId,
-    },
-    select: { kinshipRank: true, giftObligation: true },
-  });
-
-  if (!familyMember) return; // Not a family member — no minimum
-
-  // Get total contributed so far by this user to this wedding (including this contribution)
-  const previousContributions = await prisma.contribution.aggregate({
-    where: {
-      guestId: userId,
-      status: 'COMPLETED',
-      pool: { weddingId: pool.weddingId },
-      id: { not: undefined }, // all previous contributions
-    },
-    _sum: { amountKzt: true },
-  });
-
-  const prevTotalKzt = previousContributions._sum.amountKzt || 0;
-  const totalAfter = prevTotalKzt + amountKzt;
-
-  const minObligation = MIN_OBLIGATIONS[familyMember.kinshipRank] || 20000;
-  const requiredObligation = familyMember.giftObligation || minObligation;
-
-  // First contribution must meet or exceed the minimum per rank
-  if (prevTotalKzt === 0 && amountKzt < requiredObligation) {
-    throw new AppError(
-      `As a ${familyMember.kinshipRank}, your first contribution must be at least ${requiredObligation.toLocaleString()} KZT total. Current contribution (${amountKzt.toLocaleString()} KZT) is below the minimum of ${requiredObligation.toLocaleString()} KZT.`,
-      400
-    );
-  }
-
-  // If they already contributed some but haven't met the obligation, this contribution combined should meet it
-  if (prevTotalKzt > 0 && prevTotalKzt < requiredObligation && totalAfter < requiredObligation) {
-    // Allow partial contributions as long as it's not the first
-    return;
-  }
-}
 
 export const createContribution = async (req, res) => {
   const { poolId, originalAmount, originalCurrency, idempotencyKey } = req.body;
-  const guestId = req.user.id;
 
-  if (originalAmount <= 0) {
+  if (!poolId || originalAmount === undefined || !originalCurrency || !idempotencyKey) {
+    throw new AppError('poolId, originalAmount, originalCurrency, idempotencyKey are required', 400);
+  }
+
+  const pool = await prisma.giftPool.findUnique({
+    where: { id: poolId },
+    include: {
+      wedding: { select: { id: true, coupleId: true, title: true } },
+    },
+  });
+
+  if (!pool) {
+    throw new AppError('Gift pool not found', 404);
+  }
+
+  // 🆕 Проверка приватности через canAccessPool (вместо разрозненных проверок)
+  if (!canAccessPool(req.user, pool)) {
+    throw new AppError('You do not have access to this gift pool', 403);
+  }
+
+  if (pool.status !== 'PENDING' && pool.status !== 'FUNDING') {
+    throw new AppError('Pool is not open for contributions', 400);
+  }
+
+  const normalizedCurrency = originalCurrency.toUpperCase();
+
+  const exchangeRate = await getExchangeRate(normalizedCurrency, 'KZT');
+  const amountKzt = Math.round(originalAmount * exchangeRate);
+
+  if (amountKzt <= 0) {
     throw new AppError('Contribution amount must be positive', 400);
   }
 
-  const result = await prisma.$transaction(async (tx) => {
-    const pool = await tx.giftPool.findUnique({
+  const contribution = await prisma.$transaction(async (tx) => {
+    const currentPool = await tx.giftPool.findUnique({
       where: { id: poolId },
+      select: { remainingTarget: true, totalFunded: true },
     });
 
-    if (!pool) {
-      throw new AppError('Gift pool not found', 404);
-    }
-
-                if (pool.status === 'FUNDED' || pool.status === 'PURCHASED' || pool.status === 'DELIVERED') {
-      throw new AppError('Pool is no longer accepting contributions', 400);
-    }
-
-    
-    if (pool.familyOnly && req.user.role === 'GUEST') {
-      throw new AppError('This pool is for family members only', 403);
-    }
-
-    let amountKzt;
-    let exchangeRate;
-
-    if (originalCurrency === 'KZT') {
-      amountKzt = Math.round(originalAmount);
-      exchangeRate = 1;
-    } else {
-      exchangeRate = await getExchangeRate(originalCurrency, 'KZT');
-      amountKzt = Math.round(originalAmount * exchangeRate);
-    }
-
-    if (amountKzt > pool.remainingTarget) {
+    if (amountKzt > currentPool.remainingTarget) {
       throw new AppError(
-        `Contribution ${amountKzt} KZT exceeds remaining target (${pool.remainingTarget} KZT)`,
+        `Contribution ${amountKzt} KZT exceeds remaining target ${currentPool.remainingTarget} KZT`,
         400
       );
     }
 
-    await validateFamilyMinimum(guestId, pool, amountKzt);
+    const existing = await tx.contribution.findUnique({
+      where: { paymentIntentId: idempotencyKey },
+    });
 
-    const payment = await processPayment(amountKzt, idempotencyKey);
+    if (existing) {
+      return existing;
+    }
 
-    if (payment.status === 'COMPLETED') {
-      const contribution = await tx.contribution.create({
+    const paymentResult = await processPayment({
+      amount: originalAmount,
+      currency: normalizedCurrency,
+      idempotencyKey,
+    });
+
+    if (!paymentResult.success) {
+      const failedContribution = await tx.contribution.create({
         data: {
-          guestId,
+          guestId: req.user.id,
           poolId,
           amountKzt,
           originalAmount,
-          originalCurrency,
+          originalCurrency: normalizedCurrency,
           exchangeRate,
-          lockedAt: new Date(),
-          paymentIntentId: payment.paymentIntentId,
-          status: 'COMPLETED',
+          status: 'FAILED',
+          paymentIntentId: idempotencyKey,
         },
       });
-
-      const newRemaining = pool.remainingTarget - amountKzt;
-
-      await tx.giftPool.update({
-        where: { id: poolId },
-        data: {
-          totalFunded: { increment: amountKzt },
-          remainingTarget: newRemaining,
-          status: newRemaining === 0 ? 'FUNDED' : 'FUNDING',
-        },
-      });
-
-      return contribution;
+      throw new AppError(`Payment failed: ${paymentResult.error}`, 402);
     }
 
-    throw new AppError('Payment processing failed', 502);
-  });
+    const newTotalFunded = currentPool.totalFunded + amountKzt;
+    const newRemaining = currentPool.remainingTarget - amountKzt;
+    const newStatus = newRemaining === 0 ? 'FUNDED' : 'FUNDING';
 
-    await logAction({
-    userId: req.user.id,
-    action: 'CREATE_CONTRIBUTION',
-    entityType: 'Contribution',
-    entityId: result.id,
-    newValue: {
-      poolId,
-      amountKzt: result.amountKzt,
-      originalAmount: result.originalAmount,
-      originalCurrency: result.originalCurrency,
-      exchangeRate: result.exchangeRate,
-      status: result.status,
-    },
-    ipAddress: req.ip,
-  });
-
-  res.status(201).json(result);
-
-  try {
-    const poolWithWedding = await prisma.giftPool.findUnique({
+    await tx.giftPool.update({
       where: { id: poolId },
-      select: {
-        wedding: {
-          select: {
-            title: true,
-            couple: { select: { email: true, fullName: true } },
-          },
-        },
+      data: {
+        totalFunded: newTotalFunded,
+        remainingTarget: newRemaining,
+        status: newStatus,
       },
     });
 
-    if (poolWithWedding?.wedding?.couple) {
-      const couple = poolWithWedding.wedding.couple;
-      await queueContributionNotification(
-        couple.email, couple.fullName,
-        req.user.fullName || 'A guest',
-        poolWithWedding.wedding.title, result.amountKzt
-      );
+    await recordExchangeRateSnapshot(normalizedCurrency, 'KZT', exchangeRate);
 
-      const updatedPool = await prisma.giftPool.findUnique({
-        where: { id: poolId },
-        select: { status: true, targetKzt: true, totalFunded: true, name: true },
-      });
+    const newContribution = await tx.contribution.create({
+      data: {
+        guestId: req.user.id,
+        poolId,
+        amountKzt,
+        originalAmount,
+        originalCurrency: normalizedCurrency,
+        exchangeRate,
+        status: 'COMPLETED',
+        paymentIntentId: idempotencyKey,
+      },
+    });
 
-      if (updatedPool?.status === 'FUNDED') {
-        await queuePoolFundedNotification(
-          couple.email, couple.fullName,
-          updatedPool.name, updatedPool.targetKzt, updatedPool.totalFunded
-        );
-      }
-    }
-  } catch (err) {
-    console.error('[QUEUE] Notification queue error:', err.message);
-  }
+    return newContribution;
+  });
+
+  res.status(201).json(contribution);
 };
 
 export const getMyContributions = async (req, res) => {
-  const limit = Math.min(Math.abs(parseInt(req.query.limit, 10)) || 10, 100);
+  const limit = Math.min(Math.abs(parseInt(req.query.limit, 10)) || 10, 50);
   const cursor = req.query.cursor ? parseInt(req.query.cursor, 10) : undefined;
 
   const contributions = await prisma.contribution.findMany({
     where: { guestId: req.user.id },
     take: limit + 1,
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-      orderBy: { createdAt: 'desc' },
+    orderBy: { createdAt: 'desc' },
     include: {
       pool: {
-        select: { id: true, name: true, wedding: { select: { title: true } } },
-    },
+        select: {
+          id: true,
+          name: true,
+          privacy: true,
+          wedding: { select: { id: true, title: true } },
+        },
+      },
     },
   });
 
@@ -211,74 +143,35 @@ export const getMyContributions = async (req, res) => {
   const data = hasNextPage ? contributions.slice(0, limit) : contributions;
   const nextCursor = hasNextPage ? data[data.length - 1].id : null;
 
-  res.json({ data, pagination: { limit, nextCursor, hasNextPage } });
+  res.json({
+    data,
+    pagination: {
+      limit,
+      nextCursor,
+      hasNextPage,
+    },
+  });
 };
 
-export const deleteContribution = async (req, res) => {
-  const contributionId = Number(req.params.id);
-
-  const contribution = await prisma.contribution.findUnique({
-    where: { id: contributionId },
-    include: { pool: { select: { id: true } } },
-  });
-
-  if (!contribution) {
-    throw new AppError('Contribution not found', 404);
-  }
-
-    const result = await prisma.$transaction(async (tx) => {
-    const pool = await tx.giftPool.findUnique({
-      where: { id: contribution.poolId },
-    });
-
-    if (!pool) {
-      throw new AppError('Associated pool not found', 404);
-    }
-
-    await tx.giftPool.update({
-      where: { id: pool.id },
-      data: {
-        totalFunded: { decrement: contribution.amountKzt },
-        remainingTarget: { increment: contribution.amountKzt },
-        status: 'FUNDING',
-      },
-    });
-
-    await tx.contribution.update({
-      where: { id: contributionId },
-      data: { status: 'REFUNDED' },
-    });
-
-        return { message: 'Contribution cancelled and refunded' };
-  });
-
-  await logAction({
-    userId: req.user.id,
-    action: 'REFUND_CONTRIBUTION',
-    entityType: 'Contribution',
-    entityId: contributionId,
-    oldValue: { amountKzt: contribution.amountKzt, status: contribution.status, poolId: contribution.poolId },
-    newValue: { status: 'REFUNDED' },
-    ipAddress: req.ip,
-  });
-
-  res.json(result);
-};
-
-
-export const getContributions = async (req, res) => {
+export const getPoolContributions = async (req, res) => {
   const poolId = Number(req.params.poolId);
-  const limit = Math.min(Math.abs(parseInt(req.query.limit, 10)) || 10, 100);
+  const limit = Math.min(Math.abs(parseInt(req.query.limit, 10)) || 10, 50);
   const cursor = req.query.cursor ? parseInt(req.query.cursor, 10) : undefined;
 
-  
   const pool = await prisma.giftPool.findUnique({
     where: { id: poolId },
-    select: { id: true },
+    include: {
+      wedding: { select: { coupleId: true } },
+    },
   });
 
   if (!pool) {
     throw new AppError('Gift pool not found', 404);
+  }
+
+  // 🆕 Проверка приватности
+  if (!canAccessPool(req.user, pool)) {
+    throw new AppError('You do not have access to this gift pool', 403);
   }
 
   const contributions = await prisma.contribution.findMany({
@@ -305,75 +198,71 @@ export const getContributions = async (req, res) => {
   });
 };
 
+export const deleteContribution = async (req, res) => {
+  const contributionId = Number(req.params.id);
 
-export const getContributionsByCurrency = async (req, res) => {
-  const weddingId = Number(req.params.weddingId);
-
-  const wedding = await prisma.wedding.findUnique({
-    where: { id: weddingId },
-    select: { id: true, coupleId: true },
-  });
-
-  if (!wedding) {
-    throw new AppError('Wedding not found', 404);
-  }
-
-  if (wedding.coupleId !== req.user.id && req.user.role !== 'SUPER_ADMIN') {
-    throw new AppError('You can only view contributions for your own wedding', 403);
-  }
-
-  const contributions = await prisma.contribution.findMany({
-    where: {
-      status: 'COMPLETED',
-      pool: { weddingId },
-    },
+  const contribution = await prisma.contribution.findUnique({
+    where: { id: contributionId },
     include: {
-      pool: { select: { id: true, name: true } },
-      guest: { select: { id: true, fullName: true } },
+      pool: {
+        select: {
+          id: true,
+          totalFunded: true,
+          remainingTarget: true,
+          status: true,
+          wedding: { select: { coupleId: true } },
+        },
+      },
     },
-    orderBy: { createdAt: 'desc' },
   });
 
-  const byCurrency = {};
-  for (const c of contributions) {
-    const currency = c.originalCurrency;
-    if (!byCurrency[currency]) {
-      byCurrency[currency] = {
-        currency,
-        totalOriginalAmount: 0,
-        totalKzt: 0,
-        count: 0,
-        contributions: [],
-      };
-    }
-    byCurrency[currency].totalOriginalAmount += c.originalAmount;
-    byCurrency[currency].totalKzt += c.amountKzt;
-    byCurrency[currency].count += 1;
-    byCurrency[currency].contributions.push({
-      id: c.id,
-      amountKzt: c.amountKzt,
-      originalAmount: c.originalAmount,
-      originalCurrency: c.originalCurrency,
-      exchangeRate: c.exchangeRate,
-      lockedAt: c.lockedAt,
-      createdAt: c.createdAt,
-      poolName: c.pool.name,
-      guestName: c.guest?.fullName || 'Anonymous',
-    });
+  if (!contribution) {
+    throw new AppError('Contribution not found', 404);
   }
 
-  const currencyBreakdown = Object.values(byCurrency);
+  // SUPER_ADMIN может удалить любой вклад
+  if (req.user.role !== 'SUPER_ADMIN') {
+    throw new AppError('Only SUPER_ADMIN can delete contributions', 403);
+  }
 
-  const totals = {
-    totalKzt: contributions.reduce((sum, c) => sum + c.amountKzt, 0),
-    totalContributions: contributions.length,
-    totalPools: new Set(contributions.map(c => c.poolId)).size,
-  };
+  if (contribution.status !== 'COMPLETED' && contribution.status !== 'FAILED') {
+    throw new AppError('Can only delete COMPLETED or FAILED contributions', 400);
+  }
 
-  res.json({
-    weddingId,
-    totals,
-    currencyBreakdown,
+  await prisma.$transaction(async (tx) => {
+    if (contribution.status === 'COMPLETED') {
+      const newTotalFunded = contribution.pool.totalFunded - contribution.amountKzt;
+      const newRemaining = contribution.pool.remainingTarget + contribution.amountKzt;
+
+      await tx.giftPool.update({
+        where: { id: contribution.poolId },
+        data: {
+          totalFunded: newTotalFunded,
+          remainingTarget: newRemaining,
+          status: 'FUNDING',
+        },
+      });
+    }
+
+    await tx.contribution.update({
+      where: { id: contributionId },
+      data: { status: 'REFUNDED' },
+    });
   });
-};
 
+  await logAction({
+    userId: req.user.id,
+    action: 'DELETE_CONTRIBUTION',
+    entityType: 'Contribution',
+    entityId: contributionId,
+    oldValue: {
+      amountKzt: contribution.amountKzt,
+      status: contribution.status,
+      poolId: contribution.poolId,
+    },
+    newValue: { status: 'REFUNDED' },
+    ipAddress: req.ip,
+  });
+
+  res.json({ message: 'Contribution refunded successfully' });
+};

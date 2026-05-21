@@ -1,6 +1,6 @@
 const idempotencyStore = new Map();
 
-export async function processPayment(amountKzt, idempotencyKey) {
+export async function processPayment({ amount, currency, idempotencyKey }) {
   if (idempotencyStore.has(idempotencyKey)) {
     return idempotencyStore.get(idempotencyKey);
   }
@@ -10,7 +10,7 @@ export async function processPayment(amountKzt, idempotencyKey) {
   const result = {
     success: true,
     paymentIntentId,
-    amountKzt,
+    amountKzt: amount,
     status: 'COMPLETED',
   };
 

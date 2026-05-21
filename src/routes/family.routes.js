@@ -2,9 +2,66 @@ import { Router } from 'express';
 import asyncHandler from '../utils/asyncHandler.js';
 import auth from '../middleware/auth.js';
 import roleCheck from '../middleware/roleCheck.js';
-import { getFamilyTree, addFamilyMember, getGiftObligations, getMyFamilyWedding, getMyRank, removeFamilyMember, sendObligationReminders } from '../controller/familyController.js';
+import {
+  getFamilyTree,
+  getFamilyTreeRecursive,
+  addFamilyMember,
+  getGiftObligations,
+  getMyFamilyWedding,
+  getMyRank,
+  removeFamilyMember,
+  sendObligationReminders,
+} from '../controller/familyController.js';
+import validate, { addFamilyMemberSchema } from '../middleware/validation.js';
 
 const router = Router();
+
+/**
+ * @swagger
+ * /family/{weddingId}/tree/recursive:
+ *   get:
+ *     tags: [Family Tree]
+ *     summary: Get family tree hierarchy using PostgreSQL WITH RECURSIVE CTE
+ *     description: "Builds the entire family hierarchy server-side with SQL recursive CTE. Optionally filter by a specific member (root user)."
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: weddingId
+ *         required: true
+ *         schema: { type: integer }
+ *         description: Wedding ID
+ *       - in: query
+ *         name: memberId
+ *         schema: { type: integer }
+ *         description: "Optional — start from a specific member (root). Returns their full subtree."
+ *       - in: query
+ *         name: includeCouple
+ *         schema: { type: boolean, default: false }
+ *         description: "If true, include the wedding couple as the top-level root."
+ *     responses:
+ *       200:
+ *         description: Family tree built via WITH RECURSIVE
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 weddingId: { type: integer }
+ *                 queryType: { type: string, example: "WITH RECURSIVE" }
+ *                 levels:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       level:
+ *                         type: integer
+ *                       members:
+ *                         type: array
+ *       404:
+ *         description: Wedding not found
+ */
+router.get('/:weddingId/tree/recursive', auth, asyncHandler(getFamilyTreeRecursive));
 
 /**
  * @swagger
@@ -96,7 +153,7 @@ router.get('/:weddingId/obligations', auth, asyncHandler(getGiftObligations));
  *       201:
  *         description: Family member added
  */
-router.post('/:weddingId/member', auth, roleCheck('COUPLE', 'SUPER_ADMIN'), asyncHandler(addFamilyMember));
+router.post('/:weddingId/member', auth, roleCheck('COUPLE', 'SUPER_ADMIN'), validate(addFamilyMemberSchema), asyncHandler(addFamilyMember));
 
 /**
  * @swagger

@@ -16,6 +16,13 @@ import familyRoutes from './routes/family.routes.js';
 import { notFound, errorHandler } from './middleware/errorHandler.js';
 import adminRoutes from './routes/admin.routes.js';
 import moderatorRoutes from './routes/moderator.routes.js';
+import logisticsRoutes from './routes/logistics.routes.js'; // 🆕 Logistics tracking (fragile-aware)
+
+// ============================================================
+// 🚀 STARTUP: Если запущено через npm run start:all, 
+//    проверяем, не запущен ли уже worker в parent процессе
+// ============================================================
+const isWorkerMode = process.argv.includes('--worker');
 
 const app = express();
 
@@ -190,6 +197,7 @@ app.use('/contributions', contributionRoutes);
 app.use('/family', familyRoutes);
 app.use('/admin', adminRoutes);
 app.use('/moderator', moderatorRoutes);
+app.use('/', logisticsRoutes); // 🆕 Logistics endpoints: /pools/:id/logistics...
 app.use('/admin/queues', bullBoardRouter);
 app.use(notFound);
 app.use(errorHandler);
@@ -201,7 +209,7 @@ connectRedis()
   .then(() => {
         const server = app.listen(PORT, () => {
       console.log(`[INFO] Server listening on port ${PORT}`);
-      console.log(`[INFO] Swagger docs at http://localhost:${PORT}/api-docs`);
+      console.log(`[INFO] Swagger docs at http://localhost:${PORT}/docs`);
     });
 
         

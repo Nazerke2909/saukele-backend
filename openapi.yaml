@@ -68,7 +68,7 @@ components:
     # ─────────────────────────────
     RegisterRequest:
       type: object
-      required: [email, password, firstName, lastName]
+      required: [email, password]
       properties:
         email:
           type: string
@@ -79,12 +79,9 @@ components:
           format: password
           minLength: 8
           example: "Str0ng!Pass"
-        firstName:
+        fullName:
           type: string
-          example: "Ainur"
-        lastName:
-          type: string
-          example: "Kairat"
+          example: "Ainur Kairat"
         role:
           type: string
           enum: [GUEST, FAMILY_MEMBER, COUPLE, MODERATOR, SUPER_ADMIN]
@@ -121,10 +118,13 @@ components:
           type: string
           example: "eyJhbGciOiJIUzI1NiIs..."
 
-    RefreshResponse:
+      RefreshResponse:
       type: object
       properties:
         accessToken:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIs..."
+        refreshToken:
           type: string
           example: "eyJhbGciOiJIUzI1NiIs..."
 
@@ -168,15 +168,12 @@ components:
           minLength: 8
           example: "NewStr0ng!Pass"
 
-    UpdateProfileRequest:
+        UpdateProfileRequest:
       type: object
       properties:
-        firstName:
+        fullName:
           type: string
-          example: "Ainur"
-        lastName:
-          type: string
-          example: "Kairat"
+          example: "Ainur Kairat"
         email:
           type: string
           format: email
@@ -193,7 +190,7 @@ components:
           type: string
         role:
           type: string
-        isVerified:
+        emailVerified:
           type: boolean
         createdAt:
           type: string
@@ -303,7 +300,7 @@ components:
           type: boolean
           default: false
 
-        PoolResponse:
+                PoolResponse:
       type: object
       properties:
         id:
@@ -318,9 +315,17 @@ components:
         description:
           type: string
           example: "contribute to their new kitchen"
-        targetKzt:
+          targetKzt:
           type: integer
           example: 500000
+        targetAmount:
+          type: number
+          nullable: true
+          example: 1041.67
+        targetCurrency:
+          type: string
+          nullable: true
+          example: "USD"
         remainingTarget:
           type: integer
           example: 350000
@@ -331,7 +336,11 @@ components:
           type: string
           enum: [PENDING, FUNDING, FUNDED, PURCHASED, DELIVERED]
           example: "FUNDING"
-        familyOnly:
+        privacy:
+          type: string
+          enum: [PUBLIC, FAMILY_ONLY, PRIVATE]
+          example: "PUBLIC"
+        isFragile:
           type: boolean
           example: false
         createdAt:
@@ -339,7 +348,7 @@ components:
           format: date-time
           example: "2025-06-01T10:30:00.000Z"
 
-    UpdatePoolRequest:
+        UpdatePoolRequest:
       type: object
       properties:
         name:
@@ -350,7 +359,10 @@ components:
         targetKzt:
           type: integer
           example: 600000
-        familyOnly:
+        privacy:
+          type: string
+          enum: [PUBLIC, FAMILY_ONLY, PRIVATE]
+        isFragile:
           type: boolean
 
     # ─────────────────────────────
@@ -616,7 +628,7 @@ components:
         pagination:
           $ref: "#/components/schemas/CursorPagination"
 
-    PaginatedUsers:
+        PaginatedUsers:
       type: object
       properties:
         data:
@@ -624,7 +636,7 @@ components:
           items:
             $ref: "#/components/schemas/UserResponse"
         pagination:
-          $ref: "#/components/schemas/PagePagination"
+          $ref: "#/components/schemas/CursorPagination"
 
     # ─────────────────────────────
     # Pagination
@@ -1436,22 +1448,6 @@ paths:
           $ref: "#/components/responses/InternalError"
 
   /contributions/{id}:
-    delete:
-      tags: [Contributions]
-      summary: Delete a contribution (SUPER_ADMIN only)
-      description: Refunds the contribution amount to the pool.
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: integer
-      responses:
-        "200":
-          description:
-            /contributions/{id}:
     delete:
       tags: [Contributions]
       summary: Delete a contribution (SUPER_ADMIN only)

@@ -6,7 +6,7 @@
   "main": "src/app.js",
   "scripts": {
     "worker": "node src/queue/worker.js",
-    "start:all": "node src/app.js & node src/queue/worker.js",
+    "start:all": "node src/app.js & node src/queue/worker.js & wait",
     "start": "node src/app.js",
     "dev": "node --watch src/app.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --forceExit --detectOpenHandles",
@@ -36,6 +36,7 @@
     "prisma": "^5.22.0",
     "rate-limit-redis": "^4.2.0",
     "redis": "^4.7.0",
+    "resend": "^6.12.3",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
     "zod": "^3.25.76"

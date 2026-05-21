@@ -15,6 +15,8 @@ import {
   getJobDetail,
   retryJob,
   removeJob,
+  getCronTasks,
+  triggerCronTask,
 } from '../queue/monitor.js';
 const router = Router();
 
@@ -276,5 +278,46 @@ router.post('/queue-stats/:queueName/jobs/:jobId/retry', asyncHandler(retryJob))
  *         description: "SUPER_ADMIN only"
  */
 router.delete('/queue-stats/:queueName/jobs/:jobId', asyncHandler(removeJob));
+
+/**
+ * @swagger
+ * /admin/queue-stats/cron/tasks:
+ *   get:
+ *     tags: [Admin]
+ *     summary: "Get list of runnable cron tasks"
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: "List of cron tasks"
+ *       403:
+ *         description: "SUPER_ADMIN only"
+ */
+router.get('/queue-stats/cron/tasks', asyncHandler(getCronTasks));
+
+/**
+ * @swagger
+ * /admin/queue-stats/cron/trigger/{type}:
+ *   post:
+ *     tags: [Admin]
+ *     summary: "Manually trigger a cron task"
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: type
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [deadStockDecay, rateUpdate, dailyObligationReminders, gentleObligationReminders, abandonedCartRecovery]
+ *     responses:
+ *       200:
+ *         description: "Task triggered"
+ *       400:
+ *         description: "Unknown task type"
+ *       403:
+ *         description: "SUPER_ADMIN only"
+ */
+router.post('/queue-stats/cron/trigger/:type', asyncHandler(triggerCronTask));
 
 export default router;

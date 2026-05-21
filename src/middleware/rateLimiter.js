@@ -48,7 +48,7 @@ export const loginLimiter = rateLimit({
 export const registerLimiter = rateLimit({
   store: new MemoryStore(),
   windowMs: 60 * 1000,
-  max: 3,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many registration attempts, try again later' },

@@ -9,6 +9,162 @@ const MIN_OBLIGATIONS = {
   SHAKYRT: 20000,
 };
 
+/**
+ * GET /family/:weddingId/tree/recursive
+ * 
+ * Использует PostgreSQL WITH RECURSIVE для построения иерархии семейного дерева
+ * прямо на стороне базы данных.
+ * 
+ * Query params:
+ *   - memberId (optional): начать с конкретного пользователя (корень поддерева)
+ *   - includeCouple (optional, default false): включить пару (жениха/невесту) как корень
+ */
+export const getFamilyTreeRecursive = async (req, res) => {
+  const weddingId = Number(req.params.weddingId);
+  const { memberId, includeCouple } = req.query;
+
+  // Проверяем, существует ли свадьба
+  const wedding = await prisma.wedding.findUnique({
+    where: { id: weddingId },
+    select: {
+      id: true,
+      title: true,
+      coupleId: true,
+      couple: { select: { id: true, fullName: true, email: true } },
+    },
+  });
+
+  if (!wedding) {
+    throw new AppError('Wedding not found', 404);
+  }
+
+  // WITH RECURSIVE SQL-запрос
+  // 1. Начинаем с корневых узлов (ancestor_id IS NULL) или с конкретного memberId
+  // 2. Рекурсивно присоединяем потомков
+  // 3. Собираем path для отслеживания полной иерархии
+  const sql = `
+    WITH RECURSIVE family_hierarchy AS (
+      -- Базовый случай: корневые элементы (те, у кого нет ancestor)
+      SELECT
+        ft.id,
+        ft.wedding_id,
+        ft.member_id,
+        ft.ancestor_id,
+        ft.kinship_rank,
+        ft.custom_distance,
+        ft.gift_obligation,
+        u.full_name AS member_name,
+        u.email AS member_email,
+        0 AS level,
+        ARRAY[ft.member_id] AS path,
+        ARRAY[u.full_name] AS path_names
+      FROM family_trees ft
+      JOIN users u ON u.id = ft.member_id
+      WHERE ft.wedding_id = $1
+        AND ft.ancestor_id IS NULL
+        ${memberId ? `AND ft.member_id = $2` : ''}
+
+      UNION ALL
+
+      -- Рекурсивный шаг: присоединяем детей (чьи ancestor_id совпадают с member_id из предыдущего уровня)
+      SELECT
+        ft.id,
+        ft.wedding_id,
+        ft.member_id,
+        ft.ancestor_id,
+        ft.kinship_rank,
+        ft.custom_distance,
+        ft.gift_obligation,
+        u.full_name AS member_name,
+        u.email AS member_email,
+        fh.level + 1 AS level,
+        fh.path || ft.member_id AS path,
+        fh.path_names || u.full_name AS path_names
+      FROM family_trees ft
+      JOIN users u ON u.id = ft.member_id
+      JOIN family_hierarchy fh ON fh.member_id = ft.ancestor_id
+      WHERE ft.wedding_id = $1
+        AND NOT (ft.member_id = ANY(fh.path))  -- защита от циклов
+    )
+    SELECT
+      id,
+      wedding_id,
+      member_id,
+      ancestor_id,
+      kinship_rank,
+      custom_distance,
+      gift_obligation,
+      member_name,
+      member_email,
+      level,
+      array_to_string(path_names, ' → ') AS lineage
+    FROM family_hierarchy
+    ORDER BY level, member_name;
+  `;
+
+  const params = [weddingId];
+  if (memberId) {
+    params.push(Number(memberId));
+  }
+
+  const tree = await prisma.$queryRawUnsafe(sql, ...params);
+
+  // Группируем по уровням
+  const levelsMap = new Map();
+  for (const row of tree) {
+    const level = Number(row.level);
+    if (!levelsMap.has(level)) {
+      levelsMap.set(level, []);
+    }
+    levelsMap.get(level).push({
+      id: Number(row.id),
+      memberId: Number(row.member_id),
+      ancestorId: row.ancestor_id ? Number(row.ancestor_id) : null,
+      memberName: row.member_name,
+      memberEmail: row.member_email,
+      kinshipRank: row.kinship_rank,
+      customDistance: row.custom_distance ? Number(row.custom_distance) : null,
+      giftObligation: row.gift_obligation ? Number(row.gift_obligation) : null,
+      level: Number(row.level),
+      lineage: row.lineage,
+    });
+  }
+
+  // Преобразуем Map в массив уровней
+  const levels = [];
+  for (const [level, members] of levelsMap) {
+    levels.push({ level, members });
+  }
+  levels.sort((a, b) => a.level - b.level);
+
+  // Собираем статистику по тирам
+  const rankCount = {};
+  let totalMembers = 0;
+  for (const row of tree) {
+    const rank = row.kinship_rank;
+    rankCount[rank] = (rankCount[rank] || 0) + 1;
+    totalMembers++;
+  }
+
+  res.json({
+    weddingId,
+    weddingTitle: wedding.title,
+    couple: {
+      id: wedding.couple.id,
+      fullName: wedding.couple.fullName,
+      email: wedding.couple.email,
+    },
+    queryType: 'WITH RECURSIVE',
+    levels,
+    summary: {
+      totalMembers,
+      byRank: rankCount,
+      maxDepth: levels.length > 0 ? levels[levels.length - 1].level : 0,
+    },
+    tree,
+  });
+};
+
 export const getFamilyTree = async (req, res) => {
   const weddingId = Number(req.params.weddingId);
 
@@ -178,7 +334,7 @@ function buildDepthMap(familyMembers) {
 
 export const addFamilyMember = async (req, res) => {
   const weddingId = Number(req.params.weddingId);
-  const { memberId, ancestorId, giftObligation } = req.body;
+  const { memberId, ancestorId, kinshipRank: providedRank, giftObligation } = req.body;
 
   const wedding = await prisma.wedding.findUnique({
     where: { id: weddingId },
@@ -209,7 +365,10 @@ export const addFamilyMember = async (req, res) => {
   let kinshipRank;
   let computedDistance = null;
 
-  if (!ancestorId) {
+  // Если kinshipRank передан с фронта — используем его
+  if (providedRank) {
+    kinshipRank = providedRank;
+  } else if (!ancestorId) {
     kinshipRank = 'SHAKYRT';
     computedDistance = null;
   } else {
@@ -288,11 +447,22 @@ export const getMyFamilyWedding = async (req, res) => {
     throw new AppError('You are not a family member of any wedding', 404);
   }
 
+  // 🐛 FIX: Фильтруем пулы по приватности
+  const privacyFilter = {
+    OR: [
+      { privacy: 'PUBLIC' },
+      { privacy: 'FAMILY_ONLY' },
+      ...(req.user.role === 'SUPER_ADMIN' ? [{ privacy: 'PRIVATE' }] : []),
+    ],
+  };
+
   const wedding = await prisma.wedding.findUnique({
     where: { id: familyMember.weddingId },
     include: {
       couple: { select: { id: true, fullName: true, email: true } },
-      giftPools: true,
+      giftPools: {
+        where: privacyFilter,
+      },
     },
   });
 

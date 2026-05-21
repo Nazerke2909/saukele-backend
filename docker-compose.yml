@@ -43,8 +43,35 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - ./frontend:/app/frontend
+
+  # BullMQ background worker (email, notifications, etc.)
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["node", "src/queue/worker.js"]
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Scheduled tasks (BullMQ repeatable jobs / cron)
+  cron:
+    build: .
+    restart: unless-stopped
+    command: ["node", "src/queue/cron.js"]
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   pgdata:
   redisdata:
-

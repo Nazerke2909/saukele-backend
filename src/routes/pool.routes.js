@@ -2,6 +2,7 @@ import { Router } from 'express';
 import asyncHandler from '../utils/asyncHandler.js';
 import auth from '../middleware/auth.js';
 import roleCheck from '../middleware/roleCheck.js';
+import validate, { createPoolSchema, updatePoolSchema } from '../middleware/validation.js';
 import {
   createPool,
   listPools,
@@ -41,7 +42,7 @@ const router = Router();
  *       403:
  *         description: "Forbidden"
  */
-router.post('/', auth, roleCheck('COUPLE', 'SUPER_ADMIN'), asyncHandler(createPool));
+router.post('/', auth, roleCheck('COUPLE', 'SUPER_ADMIN'), validate(createPoolSchema), asyncHandler(createPool));
 /**
  * @swagger
  * /pools:
@@ -91,9 +92,9 @@ router.get('/:id', auth, asyncHandler(getPool));
 /**
  * @swagger
  * /pools/{id}:
- *   put:
+ *   patch:
  *     tags: [Pools]
- *     summary: "Update a gift pool"
+ *     summary: "Update a gift pool (partial update)"
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -111,7 +112,8 @@ router.get('/:id', auth, asyncHandler(getPool));
  *               name: { type: string, example: "Updated Kitchen Set" }
  *               description: { type: string }
  *               targetKzt: { type: integer, example: 600000 }
- *               familyOnly: { type: boolean }
+ *               privacy: { type: string, enum: [PUBLIC, FAMILY_ONLY, PRIVATE] }
+ *               isFragile: { type: boolean }
  *     responses:
  *       200:
  *         description: "Pool updated"
@@ -120,7 +122,7 @@ router.get('/:id', auth, asyncHandler(getPool));
  *       404:
  *         description: "Pool not found"
  */
-router.put('/:id', auth, roleCheck('COUPLE', 'SUPER_ADMIN'), asyncHandler(updatePool));
+router.patch('/:id', auth, roleCheck('COUPLE', 'SUPER_ADMIN'), validate(updatePoolSchema), asyncHandler(updatePool));
 /**
  * @swagger
  * /pools/{id}:
@@ -244,4 +246,3 @@ router.patch('/:id/deliver', auth, roleCheck('COUPLE', 'SUPER_ADMIN'), asyncHand
 router.patch('/:id/status', auth, roleCheck('COUPLE', 'SUPER_ADMIN'), asyncHandler(updatePoolStatus));
 
 export default router;
-

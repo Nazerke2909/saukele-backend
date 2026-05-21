@@ -5,17 +5,6 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-
-  //  ПУЛ СОЕДИНЕНИЙ
-  // ──────────────────
-  // connection_limit — количество одновременных соединений в пуле (по умолчанию 20).
-  // pool_timeout      — таймаут ожидания свободного соединения из пула (сек; по умолч. 10).
-  //
-  // Параметры задаются в DATABASE_URL через query-параметры:
-  //   DATABASE_URL=postgresql://user:pass@host:5432/db?connection_limit=20&pool_timeout=10
-  //
-  // При отсутствии параметров в URL значения подставляются автоматически
-  // в src/config/database.js (функция buildPoolConfig).
 }
 
 enum Role {
@@ -47,6 +36,23 @@ enum ContributionStatus {
   REFUNDED
 }
 
+// 🆕 Логистический статус доставки
+enum DeliveryStatus {
+  PREPARING
+  HANDED_TO_CARRIER
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+}
+
+// 🆕 Уровни приватности подарков
+enum PrivacyLevel {
+  PUBLIC
+  FAMILY_ONLY
+  PRIVATE
+}
+
 model User {
   id             Int       @id @default(autoincrement())
   email          String    @unique
@@ -55,7 +61,7 @@ model User {
   fullName       String    @map("full_name")
   isBlocked      Boolean   @default(false) @map("is_blocked")
 
-  emailVerified  Boolean   @default(false) @map("email_verified")
+  emailVerified    Boolean   @default(false) @map("email_verified")
   verificationCode String? @map("verification_code")
   resetToken     String?   @map("reset_token")
   resetTokenExp  DateTime? @map("reset_token_exp")
@@ -90,9 +96,6 @@ model Wedding {
   @@map("weddings")
 }
 
-// Self-referential family tree: ancestor_id references the parent in the hierarchy
-// member_id = the person, ancestor_id = their parent/ancestor (nullable for root)
-// This enables recursive CTE queries to traverse the full hierarchy
 model FamilyTree {
   id             Int         @id @default(autoincrement())
   weddingId      Int         @map("wedding_id")
@@ -100,7 +103,7 @@ model FamilyTree {
   ancestorId     Int?        @map("ancestor_id")
   kinshipRank    KinshipRank @map("kinship_rank")
   customDistance Int?        @map("custom_distance")
-  giftObligation Int?        @map("gift_obligation") // Expected gift amount in KZT
+  giftObligation Int?        @map("gift_obligation")
   createdAt      DateTime    @default(now()) @map("created_at")
 
   wedding  Wedding @relation(fields: [weddingId], references: [id])
@@ -114,27 +117,52 @@ model FamilyTree {
 }
 
 model GiftPool {
-  id              Int        @id @default(autoincrement())
-  weddingId       Int        @map("wedding_id")
+  id              Int          @id @default(autoincrement())
+  weddingId       Int          @map("wedding_id")
   name            String
   description     String?
-  targetKzt       Int        @map("target_kzt")
-  remainingTarget Int        @map("remaining_target")
-  totalFunded     Int        @default(0) @map("total_funded")
-  familyOnly      Boolean    @default(false) @map("family_only")
-  status          PoolStatus @default(PENDING)
-  createdAt       DateTime   @default(now()) @map("created_at")
-  updatedAt       DateTime   @updatedAt @map("updated_at")
+  targetKzt       Int          @map("target_kzt")
+  targetAmount    Float?       @map("target_amount")
+  targetCurrency  String?      @map("target_currency") @default("KZT")
+  remainingTarget Int          @map("remaining_target")
+  totalFunded     Int          @default(0) @map("total_funded")
+  // 🆕 Заменяем familyOnly на privacy (3 уровня)
+  privacy         PrivacyLevel @default(PUBLIC) @map("privacy")
+  // 🆕 Флаг хрупкости
+  isFragile       Boolean      @default(false) @map("is_fragile")
+  status          PoolStatus   @default(PENDING)
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
 
   wedding       Wedding        @relation(fields: [weddingId], references: [id])
   contributions Contribution[]
+  logisticsTrack LogisticsTracking?
 
   @@index([weddingId, status])
   @@map("gift_pools")
 }
 
-// Currency snapshot model: locks exchange rate at payment time
-// Historical rows are immutable - never updated after creation
+// 🆕 Логистический трекинг
+model LogisticsTracking {
+  id             Int            @id @default(autoincrement())
+  poolId         Int            @unique @map("pool_id")
+  deliveryStatus DeliveryStatus @default(PREPARING) @map("delivery_status")
+  carrierName    String?        @map("carrier_name")
+  trackingNumber String?        @unique @map("tracking_number")
+  carrierNotes   String?        @map("carrier_notes")
+  fragileWarningSent Boolean    @default(false) @map("fragile_warning_sent")
+  estimatedDelivery DateTime?   @map("estimated_delivery")
+  deliveredAt     DateTime?     @map("delivered_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  pool GiftPool @relation(fields: [poolId], references: [id])
+
+  @@index([deliveryStatus])
+  @@index([trackingNumber])
+  @@map("logistics_tracking")
+}
+
 model Contribution {
   id               Int                @id @default(autoincrement())
   guestId          Int                @map("guest_id")
@@ -142,8 +170,8 @@ model Contribution {
   amountKzt        Int                @map("amount_kzt")
   originalAmount   Float              @map("original_amount")
   originalCurrency String             @map("original_currency")
-  exchangeRate     Float              @map("exchange_rate")     // Locked exchange rate at payment time
-  lockedAt         DateTime           @default(now()) @map("locked_at") // Timestamp when rate was locked
+  exchangeRate     Float              @map("exchange_rate")
+  lockedAt         DateTime           @default(now()) @map("locked_at")
   status           ContributionStatus @default(PENDING)
   paymentIntentId  String?            @unique @map("payment_intent_id")
   createdAt        DateTime           @default(now()) @map("created_at")
@@ -154,6 +182,18 @@ model Contribution {
   @@index([poolId, status])
   @@index([guestId])
   @@map("contributions")
+}
+
+model ExchangeRateSnapshot {
+  id              Int       @id @default(autoincrement())
+  currencyFrom    String    @map("currency_from")
+  currencyTo      String    @map("currency_to")
+  rate            Float
+  lockedAt        DateTime  @default(now()) @map("locked_at")
+  source          String    @default("manual")
+
+  @@index([currencyFrom, currencyTo, lockedAt])
+  @@map("exchange_rate_snapshots")
 }
 
 model ExchangeRate {
@@ -186,4 +226,3 @@ model AuditLog {
   @@index([entityType, entityId])
   @@map("audit_logs")
 }
-

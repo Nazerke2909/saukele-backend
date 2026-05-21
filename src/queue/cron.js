@@ -1,4 +1,5 @@
 import { cronQueue } from './queue.js';
+import { getDelayUntilAllowed } from '../utils/culturalTiming.js';
 
 export async function registerCronJobs() {
   await cronQueue.add(
@@ -19,6 +20,11 @@ export async function registerCronJobs() {
   await cronQueue.add(
     { type: 'abandonedCartRecovery', data: {} },
     { repeat: { cron: '0 * * * *' }, jobId: 'abandoned-cart-recovery-hourly' }
+  );
+
+  await cronQueue.add(
+    { type: 'gentleObligationReminders', data: {} },
+    { repeat: { cron: '0 10 * * *' }, jobId: 'gentle-obligation-reminders-daily' }
   );
 
   console.log('[CRON] All periodic jobs registered');

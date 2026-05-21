@@ -1,6 +1,8 @@
 import { emailQueue, webhookQueue, cronQueue } from './queue.js';
+import { getDelayUntilAllowed } from '../utils/culturalTiming.js';
 
 export function queueVerificationEmail(email, code) {
+  console.log(`[PRODUCER] Adding verification email to queue for ${email}`);
   return emailQueue.add({
     type: 'verification',
     data: { email, code },
@@ -8,6 +10,7 @@ export function queueVerificationEmail(email, code) {
 }
 
 export function queueVerificationLinkEmail(email, token) {
+  console.log(`[PRODUCER] Adding verification link email to queue for ${email}`);
   return emailQueue.add({
     type: 'verificationLink',
     data: { email, token },
@@ -15,6 +18,7 @@ export function queueVerificationLinkEmail(email, token) {
 }
 
 export function queuePasswordResetEmail(email, token) {
+  console.log(`[PRODUCER] Adding password reset email to queue for ${email}`);
   return emailQueue.add({
     type: 'passwordReset',
     data: { email, token },
@@ -42,7 +46,6 @@ export function queueObligationReminder(memberEmail, memberName, weddingTitle, k
   });
 }
 
-
 export function queueWebhookRetry(url, payload, eventType) {
   return webhookQueue.add({
     url,
@@ -57,7 +60,6 @@ export function queueDeadStockDecay(poolId) {
     { delay: 7 * 24 * 60 * 60 * 1000 } 
   );
 }
-
 
 export function queueRateUpdate() {
   return cronQueue.add(
@@ -77,5 +79,49 @@ export function queueAbandonedCartRecovery() {
   return cronQueue.add(
     { type: 'abandonedCartRecovery', data: {} },
     { repeat: { every: 60 * 60 * 1000 } }
+  );
+}
+
+export function queueRegistryInvitation({ guestEmail, guestName, coupleName, weddingTitle, invitationLink, registryDescription }) {
+  const delay = getDelayUntilAllowed();
+  return emailQueue.add(
+    {
+      type: 'registryInvitation',
+      data: { guestEmail, guestName, coupleName, weddingTitle, invitationLink, registryDescription },
+    },
+    { delay }
+  );
+}
+
+export function queuePoolProgressNotification({ coupleEmail, coupleName, poolName, targetKzt, totalFundedKzt, percentage, contributorsCount, remainingDays }) {
+  const delay = getDelayUntilAllowed();
+  return emailQueue.add(
+    {
+      type: 'poolProgress',
+      data: { coupleEmail, coupleName, poolName, targetKzt, totalFundedKzt, percentage, contributorsCount, remainingDays },
+    },
+    { delay }
+  );
+}
+
+export function queueGiftDeliveryConfirmation({ donorEmail, donorName, coupleName, poolName, deliveryDate, trackingNumber, isFragile }) {
+  const delay = getDelayUntilAllowed();
+  return emailQueue.add(
+    {
+      type: 'giftDeliveryConfirmation',
+      data: { donorEmail, donorName, coupleName, poolName, deliveryDate, trackingNumber, isFragile },
+    },
+    { delay }
+  );
+}
+
+export function queueGentlePaymentReminder({ memberEmail, memberName, coupleName, weddingTitle, kinshipRank, obligationKzt, contributedKzt, remainingKzt }) {
+  const delay = getDelayUntilAllowed();
+  return emailQueue.add(
+    {
+      type: 'gentlePaymentReminder',
+      data: { memberEmail, memberName, coupleName, weddingTitle, kinshipRank, obligationKzt, contributedKzt, remainingKzt },
+    },
+    { delay }
   );
 }

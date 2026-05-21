@@ -1,0 +1,160 @@
+================================================================================
+  SAUKELE — SELF-CHECKLIST
+  Wedding Gift Management System
+================================================================================
+
+Use: [x] = verified, [ ] = needs work, N/A = not applicable
+
+================================================================================
+  1. ENVIRONMENT & DOCKER
+================================================================================
+
+[x] .env configured (DB, Redis, JWT secret, Mailgun, CORS)
+[x] Docker: PostgreSQL + Redis healthy
+[x] Docker: App + Worker + Cron build & run
+[x] Multi-stage Dockerfile (builder → runner)
+[x] HEALTHCHECK configured
+
+================================================================================
+  2. STARTUP & ACCESS
+================================================================================
+
+[x] npm start / npm run dev — no errors
+[x] http://localhost:3000 — frontend loads
+[x] http://localhost:3000/docs — Swagger docs
+[x] http://localhost:3000/admin/queues — Bull Board
+[x] Graceful shutdown (SIGINT/SIGTERM)
+
+================================================================================
+  3. AUTH & USERS
+================================================================================
+
+[x] Register (email verification code/link)
+[x] Login (JWT access + refresh tokens, rotation)
+[x] Logout (token revocation)
+[x] Password reset flow
+[x] Profile update
+[x] Rate limiting (5 login/min, 20 register/min)
+[x] Blocked user rejection
+[x] Unverified email rejection
+
+================================================================================
+  4. WEDDINGS & POOLS
+================================================================================
+
+[x] CRUD weddings (COUPLE only)
+[x] CRUD gift pools (privacy levels: PUBLIC / FAMILY_ONLY / PRIVATE)
+[x] Fragile item flagging (isFragile)
+[x] Pool state machine: PENDING → FUNDING → FUNDED → PURCHASED → DELIVERED
+[x] Purchase / deliver endpoints with guards
+
+================================================================================
+  5. CONTRIBUTIONS & EXCHANGE RATES
+================================================================================
+
+[x] Multi-currency contributions (rate locked at creation)
+[x] Idempotency key (duplicate prevention)
+[x] Overselling guard (amount ≤ remainingTarget)
+[x] Auto-transition pool to FUNDED when target met
+[x] Exchange rate snapshots (immutable history)
+[x] Redis caching (TTL 300s) + DB fallback
+[x] Hourly auto-update with ±5% variation (cron)
+
+================================================================================
+  6. FAMILY TREE
+================================================================================
+
+[x] Recursive hierarchy with kinship rank (ATA_ANA, ZHIEN_ZHARAP, SHAKYRT)
+[x] Gift obligation tracking per member
+[x] Bulk obligation reminders
+[x] Ancestor validation, duplicate prevention
+
+================================================================================
+  7. LOGISTICS TRACKING
+================================================================================
+
+[x] Full state machine: PREPARING → HANDED_TO_CARRIER → IN_TRANSIT → OUT_FOR_DELIVERY → DELIVERED / FAILED
+[x] Carrier assignment with tracking number
+[x] Fragile-aware: special carrier notes + email notifications
+[x] Auto-update pool status on delivery
+
+================================================================================
+  8. EMAIL NOTIFICATIONS
+================================================================================
+
+[x] 11 email types (verification, password reset, contribution, progress, reminders, logistics, etc.)
+[x] Bilingual templates (Kazakh / Russian / English)
+[x] Cultural timing (09:00-21:00 Astana, skip Sunday)
+[x] Mailgun SMTP with console fallback
+
+================================================================================
+  9. QUEUE SYSTEM (BullMQ + Redis)
+================================================================================
+
+[x] 3 queues: email (3 retries), webhooks (5 retries), cron (1 retry)
+[x] Bull Board UI (real-time monitoring)
+[x] REST API for queue stats, job retry, job removal
+[x] 5 cron jobs: deadStockDecay, rateUpdate, dailyReminders, gentleReminders, cartRecovery
+
+================================================================================
+  10. ADMIN & MODERATOR
+================================================================================
+
+[x] Admin: user management, exchange rates, audit log, queue management
+[x] Moderator: flagged contributions, block/unblock users, own audit log
+[x] Full audit logging on all mutations
+
+================================================================================
+  11. SECURITY
+================================================================================
+
+[x] bcrypt (12 rounds), JWT with rotation, token blacklist (Redis)
+[x] Helmet headers, CORS whitelist, rate limiting
+[x] Role-based access (5 roles), privacy guard middleware
+[x] Prisma error handling (P2002, P2025)
+
+================================================================================
+  12. TESTS
+================================================================================
+
+[x] 8 unit test files: contributions, exchange rates, kinship, family, payment, pool, etc.
+[x] 1 integration test: auth flow (DB)
+[x] npm test passes
+
+================================================================================
+  13. FRONTEND (Vanilla JS SPA)
+================================================================================
+
+[x] Pages: Home, Login, Register, Weddings, Pools, Family Tree, Admin, Moderator, Profile, My Contributions, My Rank
+[x] API client with auto token refresh
+[x] Mobile responsive, toast notifications
+
+================================================================================
+  14. PROJECT FILES
+================================================================================
+
+[x] src/ (app, config, controllers, middleware, routes, services, queue, utils)
+[x] prisma/ (schema, seed, migrations)
+[x] frontend/ (HTML, CSS, JS)
+[x] tests/ (unit, integration)
+[x] Docker / docker-compose / openapi.yaml / QUEUE_MONITORING.md / README.md / .gitignore
+
+================================================================================
+  15. PRISMA SCHEMA (all models & enums)
+================================================================================
+
+[x] User (Role: SUPER_ADMIN, COUPLE, FAMILY_MEMBER, GUEST, MODERATOR)
+[x] Wedding, GiftPool (PrivacyLevel: PUBLIC, FAMILY_ONLY, PRIVATE)
+[x] Contribution (ContributionStatus: PENDING, COMPLETED, FAILED, REFUNDED)
+[x] FamilyTree (KinshipRank: ATA_ANA, ZHIEN_ZHARAP, SHAKYRT)
+[x] LogisticsTracking (DeliveryStatus: PREPARING → DELIVERED, FAILED)
+[x] ExchangeRate, ExchangeRateSnapshot, AuditLog
+
+================================================================================
+  NOTES
+================================================================================
+
+✅ All items checked [x] — features are implemented in the codebase.
+Use this before deployment, PR review, or QA.
+
+================================================================================

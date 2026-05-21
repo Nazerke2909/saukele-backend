@@ -18,7 +18,11 @@ export const register = async (req, res) => {
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
-    return res.status(409).json({ error: 'Email already registered' });
+    if (existing.emailVerified) {
+      return res.status(409).json({ error: 'Email already registered' });
+    }
+    // Если email не подтверждён — удаляем старую запись, чтобы можно было зарегистрироваться заново
+    await prisma.user.delete({ where: { id: existing.id } });
   }
 
     const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -36,9 +40,21 @@ export const register = async (req, res) => {
     select: { id: true, email: true, fullName: true, role: true },
   });
 
-  queueVerificationLinkEmail(email, verificationCode).catch((err) => {
-    console.error('[QUEUE] Failed to queue verification email:', err.message);
-  });
+    // Пытаемся отправить письмо через очередь, если не получилось — отправляем напрямую
+  try {
+    await queueVerificationLinkEmail(email, verificationCode);
+    console.log(`[REGISTER] Verification email queued for ${email}`);
+  } catch (queueErr) {
+    console.error('[QUEUE] Failed to queue verification email:', queueErr.message);
+    console.log('[QUEUE] Falling back to direct email send...');
+    try {
+      const { sendVerificationLinkEmail } = await import('../service/emailService.js');
+      await sendVerificationLinkEmail(email, verificationCode);
+      console.log(`[REGISTER] Direct email send succeeded for ${email}`);
+    } catch (directErr) {
+      console.error('[EMAIL] Direct send also failed:', directErr.message);
+    }
+  }
 
   res.status(201).json({
     ...user,
@@ -193,7 +209,7 @@ export const logout = async (req, res) => {
 export const getMe = async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.user.id },
-    select: { id: true, email: true, fullName: true, role: true, createdAt: true },
+    select: { id: true, email: true, fullName: true, role: true, emailVerified: true, createdAt: true },
   });
   if (!user) {
     throw new AppError('User not found', 404);
@@ -303,19 +319,33 @@ export const resendVerification = async (req, res) => {
     return res.json({ message: 'Email already verified' });
   }
 
-  const verifyToken = jwt.sign(
-    { email },
-    env.SECRET_KEY,
-    { expiresIn: '1d' }
-  );
+  // 🐛 FIX: Генерируем 6-значный код, а не JWT
+  const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    queueVerificationLinkEmail(email, verifyToken).catch((err) => {
-    console.error('[QUEUE] Failed to queue verification email:', err.message);
+  // Сохраняем код в базу
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { verificationCode },
   });
 
-  res.json({ message: 'Verification link sent to email' });
-};
+  // Пытаемся отправить письмо через очередь, если не получилось — отправляем напрямую
+  try {
+    await queueVerificationLinkEmail(email, verificationCode);
+    console.log(`[RESEND] Verification email queued for ${email}`);
+  } catch (queueErr) {
+    console.error('[QUEUE] Failed to queue verification email:', queueErr.message);
+    console.log('[QUEUE] Falling back to direct email send...');
+    try {
+      const { sendVerificationLinkEmail } = await import('../service/emailService.js');
+      await sendVerificationLinkEmail(email, verificationCode);
+      console.log(`[RESEND] Direct email send succeeded for ${email}`);
+    } catch (directErr) {
+      console.error('[EMAIL] Direct send also failed:', directErr.message);
+    }
+  }
 
+  res.json({ message: 'Verification link sent to email.' });
+};
 export const forgotPassword = async (req, res) => {
   const { email } = req.body;
 
@@ -364,4 +394,25 @@ export const resetPassword = async (req, res) => {
 
   res.json({ message: 'Password reset successfully' });
 };
+/**
+ * GET /auth/search-user?email=user@example.com
+ * Поиск пользователя по email (для добавления в Family Tree)
+ */
+export const searchUserByEmail = async (req, res) => {
+  const { email } = req.query;
 
+  if (!email) {
+    throw new AppError('Email query param is required', 400);
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, email: true, fullName: true, role: true },
+  });
+
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
+
+  res.json(user);
+};
