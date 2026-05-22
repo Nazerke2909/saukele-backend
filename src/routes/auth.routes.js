@@ -22,7 +22,7 @@ import {
   resendVerification,
   forgotPassword,
   resetPassword,
-  searchUserByEmail,    // <-- ДОБАВИТЬ ЭТУ СТРОКУ
+  searchUserByEmail,   
 } from '../controller/authController.js';
 
 const router = Router();

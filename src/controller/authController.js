@@ -21,7 +21,6 @@ export const register = async (req, res) => {
     if (existing.emailVerified) {
       return res.status(409).json({ error: 'Email already registered' });
     }
-    // Если email не подтверждён — удаляем старую запись, чтобы можно было зарегистрироваться заново
     await prisma.user.delete({ where: { id: existing.id } });
   }
 
@@ -40,7 +39,6 @@ export const register = async (req, res) => {
     select: { id: true, email: true, fullName: true, role: true },
   });
 
-    // Пытаемся отправить письмо через очередь, если не получилось — отправляем напрямую
   try {
     await queueVerificationLinkEmail(email, verificationCode);
     console.log(`[REGISTER] Verification email queued for ${email}`);
@@ -270,9 +268,7 @@ export const verifyEmail = async (req, res) => {
   res.json({ message: 'Email verified successfully' });
 };
 
-/**
- * Verify email via JWT token from link (GET /auth/verify/:token)
- */
+
 export const verifyByToken = async (req, res) => {
   const { token } = req.params;
 
@@ -319,16 +315,13 @@ export const resendVerification = async (req, res) => {
     return res.json({ message: 'Email already verified' });
   }
 
-  // 🐛 FIX: Генерируем 6-значный код, а не JWT
   const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-  // Сохраняем код в базу
   await prisma.user.update({
     where: { id: user.id },
     data: { verificationCode },
   });
 
-  // Пытаемся отправить письмо через очередь, если не получилось — отправляем напрямую
   try {
     await queueVerificationLinkEmail(email, verificationCode);
     console.log(`[RESEND] Verification email queued for ${email}`);
@@ -394,10 +387,7 @@ export const resetPassword = async (req, res) => {
 
   res.json({ message: 'Password reset successfully' });
 };
-/**
- * GET /auth/search-user?email=user@example.com
- * Поиск пользователя по email (для добавления в Family Tree)
- */
+
 export const searchUserByEmail = async (req, res) => {
   const { email } = req.query;
 

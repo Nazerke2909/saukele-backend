@@ -2,6 +2,8 @@ import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logAction } from '../service/auditService.js';
 import { buildPrivacyFilter } from '../middleware/privacyGuard.js';
+import { sendRegistryConfirmationEmail } from '../service/emailService.js';
+import { createRegistryWithGifts } from '../service/registryService.js';
 
 export const createWedding = async (req, res) => {
   const { title, date, location } = req.body;
@@ -25,7 +27,39 @@ export const createWedding = async (req, res) => {
     ipAddress: req.ip,
   });
 
-  res.status(201).json(wedding);
+ 
+  const { registry, giftPools } = await createRegistryWithGifts({
+    weddingId: wedding.id,
+    coupleId: req.user.id,
+  });
+
+  const appUrl = process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3000';
+  const registryLink = `${appUrl}/weddings/${wedding.id}/registry`;
+
+  try {
+    await sendRegistryConfirmationEmail({
+      ownerEmail: wedding.couple.email,
+      ownerName: wedding.couple.fullName,
+      weddingTitle: wedding.title,
+      weddingDate: wedding.date,
+      registryLink,
+    });
+  } catch (err) {
+    console.error('[EMAIL] Failed to send registry confirmation:', err.message);
+  }
+
+  res.status(201).json({
+    ...wedding,
+    registry: {
+      id: registry.id,
+      giftPools: giftPools.map(p => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        targetKzt: p.targetKzt,
+      })),
+    },
+  });
 };
 
 export const getWedding = async (req, res) => {
@@ -42,12 +76,12 @@ export const getWedding = async (req, res) => {
     throw new AppError('Wedding not found', 404);
   }
 
-  // Фильтруем пулы по уровню приватности для текущего пользователя
+  
   const giftPools = await prisma.giftPool.findMany({
     where: buildPrivacyFilter(req.user, weddingId, wedding.coupleId),
   });
 
-  // 🆕 Флаг "моя свадьба" для COUPLE
+ 
   const isMyWedding = req.user.role === 'COUPLE' && wedding.coupleId === req.user.id;
 
   res.json({ ...wedding, giftPools, isMyWedding });
@@ -76,7 +110,7 @@ export const listWeddings = async (req, res) => {
   const data = hasNextPage ? weddings.slice(0, limit) : weddings;
   const nextCursor = hasNextPage ? data[data.length - 1].id : null;
 
-  // 🆕 Добавляем isMyWedding для COUPLE (чтобы показать "My Wedding")
+
   const dataWithFlag = data.map(w => ({
     ...w,
     isMyWedding: req.user.role === 'COUPLE' && w.couple.id === req.user.id,

@@ -73,7 +73,6 @@ describe('Payment Math Tests', () => {
     const remaining = targetKzt - contribution;
     expect(remaining).toBe(0);
 
-    // Pool should transition to FUNDED when remaining_target = 0
     const newStatus = remaining === 0 ? 'FUNDED' : 'FUNDING';
     expect(newStatus).toBe('FUNDED');
   });

@@ -23,7 +23,6 @@ export const createContribution = async (req, res) => {
     throw new AppError('Gift pool not found', 404);
   }
 
-  // 🆕 Проверка приватности через canAccessPool (вместо разрозненных проверок)
   if (!canAccessPool(req.user, pool)) {
     throw new AppError('You do not have access to this gift pool', 403);
   }
@@ -169,7 +168,6 @@ export const getPoolContributions = async (req, res) => {
     throw new AppError('Gift pool not found', 404);
   }
 
-  // 🆕 Проверка приватности
   if (!canAccessPool(req.user, pool)) {
     throw new AppError('You do not have access to this gift pool', 403);
   }
@@ -219,8 +217,6 @@ export const deleteContribution = async (req, res) => {
   if (!contribution) {
     throw new AppError('Contribution not found', 404);
   }
-
-  // SUPER_ADMIN может удалить любой вклад
   if (req.user.role !== 'SUPER_ADMIN') {
     throw new AppError('Only SUPER_ADMIN can delete contributions', 403);
   }

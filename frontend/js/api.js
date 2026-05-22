@@ -8,9 +8,10 @@ class SaukeleAPI {
     const port = window.location.port;
     const devPorts = ['3000', '4000'];
     
+    // In Docker/production, use the same origin
     if (port === '5500' || port === '5173' || port === '3000' || port === '') {
-      // We're in dev mode — try port 3000 (from .env) or 4000
-      this.baseURL = 'http://localhost:3000';
+      // Dev mode — use API_BASE_URL env or default to same origin
+      this.baseURL = window.API_BASE_URL || window.location.origin;
     } else {
       this.baseURL = window.location.origin;  // Production (served from backend)
     }

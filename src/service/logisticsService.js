@@ -3,10 +3,6 @@ import { AppError } from '../middleware/errorHandler.js';
 import { logAction } from './auditService.js';
 import { sendFragileCarrierNotification } from './emailService.js';
 
-/**
- * Создаёт запись логистического трекинга для пула.
- * Автоматически генерирует заметку о хрупкости, если isFragile = true.
- */
 export async function createLogisticsTracking(poolId, userId, ipAddress) {
   const pool = await prisma.giftPool.findUnique({
     where: { id: poolId },
@@ -30,7 +26,6 @@ export async function createLogisticsTracking(poolId, userId, ipAddress) {
     throw new AppError('Pool must be in PURCHASED status to create logistics tracking', 400);
   }
 
-  // Формируем заметки для перевозчика
   let carrierNotes = null;
   if (pool.isFragile) {
     carrierNotes = '⚠️ FRAGILE ITEM — Handle with care. This gift contains fragile items that require special handling during transport.';
@@ -41,7 +36,7 @@ export async function createLogisticsTracking(poolId, userId, ipAddress) {
       poolId: pool.id,
       deliveryStatus: 'PREPARING',
       carrierNotes,
-      fragileWarningSent: false, // Будет отправлено при передаче перевозчику
+      fragileWarningSent: false, 
     },
   });
 
@@ -62,10 +57,6 @@ export async function createLogisticsTracking(poolId, userId, ipAddress) {
   return tracking;
 }
 
-/**
- * Назначает перевозчика и трек-номер для пула.
- * Если товар хрупкий — отправляет спец-уведомление перевозчику.
- */
 export async function assignCarrier(poolId, { carrierName, trackingNumber, estimatedDelivery }, userId, ipAddress) {
   const pool = await prisma.giftPool.findUnique({
     where: { id: poolId },
@@ -86,7 +77,7 @@ export async function assignCarrier(poolId, { carrierName, trackingNumber, estim
 
   let fragileWarningSent = pool.logisticsTrack.fragileWarningSent;
 
-  // 🆕 Если товар хрупкий — отправляем специальное уведомление перевозчику
+  
   if (pool.isFragile && !fragileWarningSent) {
     try {
       await sendFragileCarrierNotification({
@@ -101,7 +92,7 @@ export async function assignCarrier(poolId, { carrierName, trackingNumber, estim
       fragileWarningSent = true;
     } catch (err) {
       console.error(`[LOGISTICS] Failed to send fragile carrier notification for pool ${poolId}:`, err.message);
-      // Не блокируем операцию, но логируем ошибку
+      
     }
   }
 
@@ -141,10 +132,6 @@ export async function assignCarrier(poolId, { carrierName, trackingNumber, estim
   return updated;
 }
 
-/**
- * Обновляет статус доставки логистического трекинга.
- * При переводе в DELIVERED — также обновляет статус пула.
- */
 export async function updateDeliveryStatus(poolId, newStatus, metadata = {}, userId, ipAddress) {
   const validTransitions = {
     PREPARING: ['HANDED_TO_CARRIER'],
@@ -176,7 +163,7 @@ export async function updateDeliveryStatus(poolId, newStatus, metadata = {}, use
     ...(metadata.carrierNotes ? { carrierNotes: metadata.carrierNotes } : {}),
   };
 
-  // Если товар хрупкий и передаём курьеру — дублируем предупреждение
+ 
   if (newStatus === 'OUT_FOR_DELIVERY' && tracking.pool.isFragile) {
     const fragileNote = '⚠️ FRAGILE — Please handle with extra care during last-mile delivery.';
     updateData.carrierNotes = tracking.carrierNotes
@@ -189,7 +176,7 @@ export async function updateDeliveryStatus(poolId, newStatus, metadata = {}, use
     data: updateData,
   });
 
-  // Если доставлено — автоматически обновляем статус пула
+  
   if (newStatus === 'DELIVERED') {
     await prisma.giftPool.update({
       where: { id: poolId },
@@ -210,9 +197,6 @@ export async function updateDeliveryStatus(poolId, newStatus, metadata = {}, use
   return updated;
 }
 
-/**
- * Получает полную информацию о логистическом трекинге пула.
- */
 export async function getLogisticsTracking(poolId) {
   const tracking = await prisma.logisticsTracking.findUnique({
     where: { poolId },

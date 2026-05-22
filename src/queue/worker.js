@@ -50,7 +50,6 @@ emailQueue.process(async (job) => {
       );
       break;
 
-    // ===== КУЛЬТУРНО-ЗАВИСИМЫЕ БИЗНЕС-ПИСЬМА (4 шт) =====
     case 'registryInvitation':
       await sendRegistryInvitationEmail({
         guestEmail: data.guestEmail,
@@ -282,15 +281,9 @@ async function handleDailyObligationReminders() {
   console.log(`[CRON] Daily obligation reminders sent for ${weddings.length} weddings`);
 }
 
-/**
- * Мягкие напоминания о платежах с учётом культурных таймингов.
- * Проверяет время по Астане (09:00–21:00) и не отправляет в воскресенье.
- * Если сейчас неразрешённое время — откладывает задачу.
- */
 async function handleGentleObligationReminders() {
   console.log('[CRON] Gentle obligation reminders started (culturally-aware timing)');
 
-  // Проверка: если сейчас неразрешённое время — откладываем
   const { allowed, reason } = isSendingAllowed();
   if (!allowed) {
     const delay = getDelayUntilAllowed();
@@ -345,7 +338,6 @@ async function handleGentleObligationReminders() {
       const contributedKzt = contributionMap.get(fm.memberId) || 0;
       const remainingKzt = fm.giftObligation - contributedKzt;
 
-      // Используем очередь культурно-зависимых уведомлений с задержкой
       await emailQueue.add(
         {
           type: 'gentlePaymentReminder',
@@ -408,7 +400,7 @@ async function handleAbandonedCartRecovery() {
   console.log(`[CRON] Abandoned cart recovery: ${abandoned.length} pending contributions found`);
 }
 
-// Log job results to database
+
 emailQueue.on('completed', (job) => logJobResult('email', job, 'completed'));
 emailQueue.on('failed', (job) => logJobResult('email', job, 'failed'));
 
@@ -423,7 +415,6 @@ console.log('[WORKER]   emailQueue — email notifications');
 console.log('[WORKER]   webhookQueue — webhook retries (max 5 attempts)');
 console.log('[WORKER]   cronQueue — periodic tasks (dead stock, rates, reminders, cart recovery)');
 
-// Регистрируем периодические cron-задачи
 registerCronJobs().catch((err) =>
   console.error('[WORKER] Failed to register cron jobs:', err.message)
 );

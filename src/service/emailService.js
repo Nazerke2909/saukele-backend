@@ -3,19 +3,12 @@ import nodemailer from 'nodemailer';
 
 const fromName = 'Saukele';
 
-// Создаём транспортер Nodemailer с Mailgun SMTP
 function createTransporter() {
   if (env.MAILGUN_API_KEY) {
-    // Sandbox-домен Mailgun (когда нет своего домена)
     const isSandbox = env.MAILGUN_DOMAIN && env.MAILGUN_DOMAIN.includes('sandbox');
     const mailgunDomain = env.MAILGUN_DOMAIN || 'sandboxxxxxxxxxxxxxxxx.mailgun.org';
     
-    // Для sandbox: SMTP логин это ВЕСЬ API ключ целиком, а пароль - пароль от mailgun
-    // На самом деле для Mailgun SMTP:
-    //   Username = postmaster@sandbox...mailgun.org
-    //   Password = ваш пароль (НЕ api key, а отдельный SMTP пароль!)
     const authUser = env.MAILGUN_SMTP_USER || `postmaster@${mailgunDomain}`;
-    // SMTP пароль — может быть MAILGUN_SMTP_PASSWORD или MAILGUN_SMTP_PASS
     const authPass = env.MAILGUN_SMTP_PASSWORD || env.MAILGUN_SMTP_PASS || env.MAILGUN_API_KEY;
 
     console.log('[EMAIL] Initializing Mailgun SMTP transporter...');
@@ -36,14 +29,11 @@ function createTransporter() {
     });
   }
 
-  // fallback — логируем в консоль (для разработки)
+  
   console.warn('[EMAIL] No MAILGUN_API_KEY configured — emails will not be sent');
   return null;
 }
 
-/**
- * Отправляет email через Mailgun (через Nodemailer)
- */
 async function sendMail({ to, subject, html, from }) {
   const transporter = createTransporter();
   if (!transporter) {
@@ -68,9 +58,6 @@ async function sendMail({ to, subject, html, from }) {
   }
 }
 
-// ============================================================
-// ФУНКЦИИ ОТПРАВКИ (все используют sendMail выше)
-// ============================================================
 
 export async function sendVerificationEmail(email, code) {
   const appUrl = env.APP_URL || 'http://localhost:3000';
@@ -499,5 +486,65 @@ export async function sendDeliveryStatusUpdateEmail(coupleEmail, coupleName, poo
       <hr>
       <p style="color: #888;">Saukele — Wedding Gift Management</p>
     `,
+  });
+}
+
+export async function sendRegistryConfirmationEmail({
+  ownerEmail, ownerName, weddingTitle, weddingDate, registryLink,
+}) {
+  return sendMail({
+    to: ownerEmail,
+    subject: `🎊 Ваш свадебный реестр "${weddingTitle}" создан! / Реестріңіз құрылды! — Saukele`,
+    html: `<!DOCTYPE html>
+      <html><head><meta charset="utf-8">
+        <style>
+          body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; }
+          .header { background: linear-gradient(135deg, #8B0000, #DAA520); padding: 24px; text-align: center; border-radius: 12px 12px 0 0; }
+          .header h1 { color: white; margin: 0; font-size: 28px; }
+          .header p { color: #FFD700; margin: 8px 0 0 0; font-style: italic; }
+          .content { padding: 24px; background: #fafafa; border-radius: 0 0 12px 12px; }
+          .btn { display: inline-block; padding: 14px 36px; margin: 16px 0; background: linear-gradient(135deg, #8B0000, #DAA520); color: white !important; text-decoration: none; border-radius: 8px; font-size: 18px; font-weight: bold; }
+          .ornament { text-align: center; font-size: 24px; color: #DAA520; margin: 16px 0; }
+          .details { background: #fff; padding: 16px; border-radius: 8px; border: 1px solid #e0e0e0; margin: 16px 0; }
+          .details td { padding: 10px; border-bottom: 1px solid #f0f0f0; }
+          .details td:first-child { font-weight: bold; color: #666; width: 160px; }
+          .gift-list { margin: 16px 0; }
+          .gift-item { display: inline-block; background: #fff3e0; padding: 8px 16px; margin: 4px; border-radius: 20px; font-size: 14px; border: 1px solid #FFE0B2; }
+          .footer { text-align: center; color: #888; font-size: 12px; margin-top: 24px; border-top: 1px solid #eee; padding-top: 16px; }
+        </style>
+      </head><body>
+        <div class="header">
+          <h1>🎊 Құттықтаймыз! / Поздравляем!</h1>
+          <p>Ваш свадебный реестр создан / Той реестріңіз құрылды</p>
+        </div>
+        <div class="content">
+          <div class="ornament">✦ ✦ ✦</div>
+          <h2>Құрметті ${ownerName}!</h2>
+          <p><em>Уважаемый(ая) ${ownerName}!</em></p>
+          <p>Ваш свадебный реестр <strong>"${weddingTitle}"</strong> успешно создан с традиционными подарками!</p>
+          <p><em>Сіздің <strong>"${weddingTitle}"</strong> реестріңіз дәстүрлі сыйлықтармен құрылды!</em></p>
+          <div class="details">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr><td>Реестр / Реестр</td><td><strong>${weddingTitle}</strong></td></tr>
+              <tr><td>Дата / Күні</td><td><strong>${new Date(weddingDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</strong></td></tr>
+              <tr><td>Статус / Күйі</td><td><strong style="color: #4CAF50;">✅ Активен</strong></td></tr>
+            </table>
+          </div>
+          <p><strong>🎁 Добавленные подарки:</strong></p>
+          <div class="gift-list">
+            <span class="gift-item">💍 Саукеле</span>
+            <span class="gift-item">🥛 Сүт ақы</span>
+            <span class="gift-item">💰 Қаржы</span>
+          </div>
+          <p>Приглашайте гостей и начинайте сбор!</p>
+          <p><em>Қонақтарды шақырып, жинауды бастаңыз!</em></p>
+          <div style="text-align: center;">
+            <a href="${registryLink}" class="btn">🎁 Реестрді көру</a>
+          </div>
+        </div>
+        <div class="footer">
+          <p>Saukele — Wedding Gift Management</p>
+        </div>
+      </body></html>`,
   });
 }

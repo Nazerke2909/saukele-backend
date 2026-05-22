@@ -15,9 +15,9 @@ components:
       scheme: bearer
       bearerFormat: JWT
 
-  # ─────────────────────────────────────
-  # Standard responses (переиспользуемые)
-  # ─────────────────────────────────────
+  # ───────────────────
+  # Standard responses 
+  # ───────────────────
   responses:
     BadRequest:
       description: Bad request — invalid input or business rule violation

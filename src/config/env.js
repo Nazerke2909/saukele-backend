@@ -22,7 +22,6 @@ const envSchema = z.object({
   SMTP_FROM: z.string().default('noreply@saukele.kz'),
   APP_URL: z.string().default('http://localhost:3000'),
 
-  // Mailgun
   MAILGUN_API_KEY: z.string().optional(),
   MAILGUN_DOMAIN: z.string().optional(),
   MAILGUN_SMTP_HOST: z.string().default('smtp.mailgun.org'),
@@ -43,7 +42,6 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-// Логирование Mailgun конфигурации
 if (parsed.data.MAILGUN_SMTP_USER) {
   console.log('[ENV] ✅ Mailgun configured:');
   console.log(`  - User: ${parsed.data.MAILGUN_SMTP_USER}`);

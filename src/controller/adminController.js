@@ -56,7 +56,6 @@ export const deleteUser = async (req, res) => {
     await tx.familyTree.deleteMany({ where: { memberId: userId } });
     await tx.familyTree.deleteMany({ where: { ancestorId: userId } });
 
-    // 🐛 FIX: guestId Int NOT NULL — удаляем вклады вместо null
     await tx.contribution.deleteMany({
       where: { guestId: userId },
     });

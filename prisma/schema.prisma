@@ -36,7 +36,7 @@ enum ContributionStatus {
   REFUNDED
 }
 
-// 🆕 Логистический статус доставки
+
 enum DeliveryStatus {
   PREPARING
   HANDED_TO_CARRIER
@@ -46,7 +46,6 @@ enum DeliveryStatus {
   FAILED
 }
 
-// 🆕 Уровни приватности подарков
 enum PrivacyLevel {
   PUBLIC
   FAMILY_ONLY
@@ -54,27 +53,28 @@ enum PrivacyLevel {
 }
 
 model User {
-  id             Int       @id @default(autoincrement())
-  email          String    @unique
-  hashedPassword String    @map("hashed_password")
+  id             Int     @id @default(autoincrement())
+  email          String  @unique
+  hashedPassword String  @map("hashed_password")
   role           Role
-  fullName       String    @map("full_name")
-  isBlocked      Boolean   @default(false) @map("is_blocked")
+  fullName       String  @map("full_name")
+  isBlocked      Boolean @default(false) @map("is_blocked")
 
   emailVerified    Boolean   @default(false) @map("email_verified")
-  verificationCode String? @map("verification_code")
-  resetToken     String?   @map("reset_token")
-  resetTokenExp  DateTime? @map("reset_token_exp")
+  verificationCode String?   @map("verification_code")
+  resetToken       String?   @map("reset_token")
+  resetTokenExp    DateTime? @map("reset_token_exp")
 
   refreshTokenHash String? @map("refresh_token_hash")
 
-  createdAt      DateTime  @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   weddingsAsCouple  Wedding[]      @relation("coupleWeddings")
   familyMemberships FamilyTree[]   @relation("familyMember")
   familyAncestors   FamilyTree[]   @relation("familyAncestor")
   contributions     Contribution[]
   auditLogs         AuditLog[]
+  registries        Registry[]     @relation("registryCouple")
 
   @@index([email])
   @@map("users")
@@ -88,9 +88,10 @@ model Wedding {
   location  String?
   createdAt DateTime @default(now()) @map("created_at")
 
-  couple     User        @relation("coupleWeddings", fields: [coupleId], references: [id])
+  couple     User         @relation("coupleWeddings", fields: [coupleId], references: [id])
   giftPools  GiftPool[]
   familyTree FamilyTree[]
+  registry   Registry?    @relation("weddingRegistry")
 
   @@index([coupleId])
   @@map("weddings")
@@ -119,42 +120,62 @@ model FamilyTree {
 model GiftPool {
   id              Int          @id @default(autoincrement())
   weddingId       Int          @map("wedding_id")
+  registryId      Int?         @map("registry_id")
   name            String
   description     String?
   targetKzt       Int          @map("target_kzt")
   targetAmount    Float?       @map("target_amount")
-  targetCurrency  String?      @map("target_currency") @default("KZT")
+  targetCurrency  String?      @default("KZT") @map("target_currency")
   remainingTarget Int          @map("remaining_target")
   totalFunded     Int          @default(0) @map("total_funded")
-  // 🆕 Заменяем familyOnly на privacy (3 уровня)
   privacy         PrivacyLevel @default(PUBLIC) @map("privacy")
-  // 🆕 Флаг хрупкости
   isFragile       Boolean      @default(false) @map("is_fragile")
   status          PoolStatus   @default(PENDING)
   createdAt       DateTime     @default(now()) @map("created_at")
   updatedAt       DateTime     @updatedAt @map("updated_at")
 
-  wedding       Wedding        @relation(fields: [weddingId], references: [id])
-  contributions Contribution[]
+  wedding        Wedding            @relation(fields: [weddingId], references: [id])
+  registry       Registry?          @relation(fields: [registryId], references: [id])
+  contributions  Contribution[]
   logisticsTrack LogisticsTracking?
 
   @@index([weddingId, status])
   @@map("gift_pools")
 }
 
-// 🆕 Логистический трекинг
+enum TraditionalGiftType {
+  SAUKELE
+  SUT_AKY
+  KARZHY
+}
+
+model Registry {
+  id        Int      @id @default(autoincrement())
+  weddingId Int      @unique @map("wedding_id")
+  coupleId  Int      @map("couple_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  wedding   Wedding    @relation("weddingRegistry", fields: [weddingId], references: [id])
+  couple    User       @relation("registryCouple", fields: [coupleId], references: [id])
+  giftPools GiftPool[]
+
+  @@index([weddingId])
+  @@map("registries")
+}
+
 model LogisticsTracking {
-  id             Int            @id @default(autoincrement())
-  poolId         Int            @unique @map("pool_id")
-  deliveryStatus DeliveryStatus @default(PREPARING) @map("delivery_status")
-  carrierName    String?        @map("carrier_name")
-  trackingNumber String?        @unique @map("tracking_number")
-  carrierNotes   String?        @map("carrier_notes")
-  fragileWarningSent Boolean    @default(false) @map("fragile_warning_sent")
-  estimatedDelivery DateTime?   @map("estimated_delivery")
-  deliveredAt     DateTime?     @map("delivered_at")
-  createdAt       DateTime      @default(now()) @map("created_at")
-  updatedAt       DateTime      @updatedAt @map("updated_at")
+  id                 Int            @id @default(autoincrement())
+  poolId             Int            @unique @map("pool_id")
+  deliveryStatus     DeliveryStatus @default(PREPARING) @map("delivery_status")
+  carrierName        String?        @map("carrier_name")
+  trackingNumber     String?        @unique @map("tracking_number")
+  carrierNotes       String?        @map("carrier_notes")
+  fragileWarningSent Boolean        @default(false) @map("fragile_warning_sent")
+  estimatedDelivery  DateTime?      @map("estimated_delivery")
+  deliveredAt        DateTime?      @map("delivered_at")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
 
   pool GiftPool @relation(fields: [poolId], references: [id])
 
@@ -185,12 +206,12 @@ model Contribution {
 }
 
 model ExchangeRateSnapshot {
-  id              Int       @id @default(autoincrement())
-  currencyFrom    String    @map("currency_from")
-  currencyTo      String    @map("currency_to")
-  rate            Float
-  lockedAt        DateTime  @default(now()) @map("locked_at")
-  source          String    @default("manual")
+  id           Int      @id @default(autoincrement())
+  currencyFrom String   @map("currency_from")
+  currencyTo   String   @map("currency_to")
+  rate         Float
+  lockedAt     DateTime @default(now()) @map("locked_at")
+  source       String   @default("manual")
 
   @@index([currencyFrom, currencyTo, lockedAt])
   @@map("exchange_rate_snapshots")

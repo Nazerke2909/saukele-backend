@@ -1,19 +1,12 @@
 import * as logisticsService from '../service/logisticsService.js';
 
-/**
- * POST /pools/:id/logistics
- * Создать запись логистического трекинга для пула (после PURCHASED)
- */
+
 export const createTracking = async (req, res) => {
   const poolId = Number(req.params.id);
   const tracking = await logisticsService.createLogisticsTracking(poolId, req.user.id, req.ip);
   res.status(201).json(tracking);
 };
 
-/**
- * POST /pools/:id/logistics/carrier
- * Назначить перевозчика и трек-номер
- */
 export const assignCarrier = async (req, res) => {
   const poolId = Number(req.params.id);
   const { carrierName, trackingNumber, estimatedDelivery } = req.body;
@@ -32,10 +25,6 @@ export const assignCarrier = async (req, res) => {
   res.json(tracking);
 };
 
-/**
- * PATCH /pools/:id/logistics/status
- * Обновить статус доставки
- */
 export const updateStatus = async (req, res) => {
   const poolId = Number(req.params.id);
   const { deliveryStatus, carrierNotes } = req.body;
@@ -62,10 +51,6 @@ export const updateStatus = async (req, res) => {
   res.json(tracking);
 };
 
-/**
- * GET /pools/:id/logistics
- * Получить информацию о логистическом трекинге
- */
 export const getTracking = async (req, res) => {
   const poolId = Number(req.params.id);
   const tracking = await logisticsService.getLogisticsTracking(poolId);

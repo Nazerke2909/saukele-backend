@@ -14,7 +14,7 @@ const VALID_TRANSITIONS = {
 export const createPool = async (req, res) => {
   const { weddingId, name, description, targetKzt, targetAmount, targetCurrency, privacy, isFragile } = req.body;
 
-  // 🆕 Multi-currency target support
+
   let finalTargetKzt = targetKzt;
   let normTargetAmount = targetAmount || null;
   let normTargetCurrency = (targetCurrency || 'KZT').toUpperCase();
@@ -47,7 +47,7 @@ export const createPool = async (req, res) => {
     throw new AppError('You can only create pools for your own wedding', 403);
   }
 
-  // 🆕 Валидация privacy
+  
   const validPrivacy = ['PUBLIC', 'FAMILY_ONLY', 'PRIVATE'];
   const poolPrivacy = privacy || 'PUBLIC';
   if (!validPrivacy.includes(poolPrivacy)) {
@@ -88,7 +88,7 @@ export const createPool = async (req, res) => {
   res.status(201).json(pool);
 };
 
-// В функции listPools — исправленный вызов buildPrivacyFilter
+
 
 export const listPools = async (req, res) => {
   const weddingId = req.query.weddingId ? Number(req.query.weddingId) : null;
@@ -105,7 +105,7 @@ export const listPools = async (req, res) => {
       throw new AppError('Wedding not found', 404);
     }
 
-    // 🆕 Используем privacyFilter с передачей coupleId
+    
     whereClause = buildPrivacyFilter(req.user, weddingId, wedding.coupleId);
   }
 
@@ -149,7 +149,7 @@ export const getPool = async (req, res) => {
     throw new AppError('Gift pool not found', 404);
   }
 
-  // 🆕 Используем canAccessPool вместо старой проверки
+  
   if (!canAccessPool(req.user, pool)) {
     throw new AppError('You do not have access to this gift pool', 403);
   }
@@ -157,11 +157,6 @@ export const getPool = async (req, res) => {
   res.json(pool);
 };
 
-/**
- * GET /pools/{id}/progress?currency=USD
- * Returns pool funding progress in the selected (or base) currency
- * using locked exchange rates from contributions.
- */
 export const getPoolProgress = async (req, res) => {
   const poolId = Number(req.params.id);
   const displayCurrency = (req.query.currency || 'KZT').toUpperCase();
@@ -178,12 +173,12 @@ export const getPoolProgress = async (req, res) => {
     throw new AppError('Gift pool not found', 404);
   }
 
-  // 🆕 Используем canAccessPool
+  
   if (!canAccessPool(req.user, pool)) {
     throw new AppError('You do not have access to this gift pool', 403);
   }
 
-  // Get all completed contributions with their locked rates
+
   const contributions = await prisma.contribution.findMany({
     where: { poolId, status: 'COMPLETED' },
     orderBy: { createdAt: 'desc' },
@@ -192,7 +187,7 @@ export const getPoolProgress = async (req, res) => {
     },
   });
 
-  // Group by original currency
+  
   const byCurrency = {};
   for (const c of contributions) {
     const cur = c.originalCurrency;
@@ -209,7 +204,7 @@ export const getPoolProgress = async (req, res) => {
     byCurrency[cur].count += 1;
   }
 
-  // Convert pool totals to display currency
+  
   let displayTarget;
   let displayFunded;
   let displayRemaining;
@@ -331,7 +326,7 @@ export const updatePool = async (req, res) => {
     throw new AppError('Gift pool not found', 404);
   }
 
-  // 🆕 Используем canEditPool
+
   if (!canEditPool(req.user, pool)) {
     throw new AppError('You can only update your own pool', 403);
   }
@@ -349,7 +344,7 @@ export const updatePool = async (req, res) => {
     }
   }
 
-  // 🆕 Валидация privacy
+  
   if (privacy !== undefined) {
     const validPrivacy = ['PUBLIC', 'FAMILY_ONLY', 'PRIVATE'];
     if (!validPrivacy.includes(privacy)) {
@@ -411,7 +406,7 @@ export const deletePool = async (req, res) => {
     throw new AppError('Gift pool not found', 404);
   }
 
-  // 🆕 Используем canEditPool
+ 
   if (!canEditPool(req.user, pool)) {
     throw new AppError('You can only delete your own pool', 403);
   }

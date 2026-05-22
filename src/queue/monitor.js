@@ -5,7 +5,6 @@ import { emailQueue, webhookQueue, cronQueue } from './queue.js';
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 
-// Список доступных cron-задач для ручного запуска
 const CRON_TASKS = {
   deadStockDecay: {
     label: '🔄 Dead Stock Decay',
@@ -205,10 +204,6 @@ export async function removeJob(req, res) {
   res.json({ message: `Job #${jobId} removed` });
 }
 
-/**
- * GET /admin/queue-stats/cron/tasks
- * Возвращает список доступных cron-задач для ручного запуска
- */
 export async function getCronTasks(req, res) {
   const repeatableJobs = await cronQueue.getRepeatableJobs();
 
@@ -226,10 +221,6 @@ export async function getCronTasks(req, res) {
   res.json(tasks);
 }
 
-/**
- * POST /admin/queue-stats/cron/trigger/:type
- * Запускает указанную cron-задачу немедленно
- */
 export async function triggerCronTask(req, res) {
   const { type } = req.params;
   const taskConfig = CRON_TASKS[type];
@@ -248,7 +239,7 @@ export async function triggerCronTask(req, res) {
 
   console.log(`[MANUAL_TRIGGER] Cron task "${type}" triggered manually (job #${job.id})`);
 
-  // Логируем в audit log
+  
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     await prisma.auditLog.create({
@@ -276,7 +267,7 @@ export async function triggerCronTask(req, res) {
 
 export async function logJobResult(queueName, job, status) {
   try {
-    // Находим первого попавшегося админа/модератора для audit log
+    
     const systemUser = await prisma.user.findFirst({
       where: { OR: [{ role: 'SUPER_ADMIN' }, { role: 'MODERATOR' }] },
       orderBy: { id: 'asc' },

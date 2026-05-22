@@ -9,21 +9,10 @@ const MIN_OBLIGATIONS = {
   SHAKYRT: 20000,
 };
 
-/**
- * GET /family/:weddingId/tree/recursive
- * 
- * Использует PostgreSQL WITH RECURSIVE для построения иерархии семейного дерева
- * прямо на стороне базы данных.
- * 
- * Query params:
- *   - memberId (optional): начать с конкретного пользователя (корень поддерева)
- *   - includeCouple (optional, default false): включить пару (жениха/невесту) как корень
- */
 export const getFamilyTreeRecursive = async (req, res) => {
   const weddingId = Number(req.params.weddingId);
   const { memberId, includeCouple } = req.query;
 
-  // Проверяем, существует ли свадьба
   const wedding = await prisma.wedding.findUnique({
     where: { id: weddingId },
     select: {
@@ -38,112 +27,125 @@ export const getFamilyTreeRecursive = async (req, res) => {
     throw new AppError('Wedding not found', 404);
   }
 
-  // WITH RECURSIVE SQL-запрос
-  // 1. Начинаем с корневых узлов (ancestor_id IS NULL) или с конкретного memberId
-  // 2. Рекурсивно присоединяем потомков
-  // 3. Собираем path для отслеживания полной иерархии
-  const sql = `
-    WITH RECURSIVE family_hierarchy AS (
-      -- Базовый случай: корневые элементы (те, у кого нет ancestor)
-      SELECT
-        ft.id,
-        ft.wedding_id,
-        ft.member_id,
-        ft.ancestor_id,
-        ft.kinship_rank,
-        ft.custom_distance,
-        ft.gift_obligation,
-        u.full_name AS member_name,
-        u.email AS member_email,
-        0 AS level,
-        ARRAY[ft.member_id] AS path,
-        ARRAY[u.full_name] AS path_names
-      FROM family_trees ft
-      JOIN users u ON u.id = ft.member_id
-      WHERE ft.wedding_id = $1
-        AND ft.ancestor_id IS NULL
-        ${memberId ? `AND ft.member_id = $2` : ''}
+  // Получаем всех членов семьи для данной свадьбы через Prisma
+  const familyMembers = await prisma.familyTree.findMany({
+    where: { weddingId },
+    include: {
+      member: { select: { id: true, fullName: true, email: true } },
+    },
+    orderBy: { member: { fullName: 'asc' } },
+  });
 
-      UNION ALL
-
-      -- Рекурсивный шаг: присоединяем детей (чьи ancestor_id совпадают с member_id из предыдущего уровня)
-      SELECT
-        ft.id,
-        ft.wedding_id,
-        ft.member_id,
-        ft.ancestor_id,
-        ft.kinship_rank,
-        ft.custom_distance,
-        ft.gift_obligation,
-        u.full_name AS member_name,
-        u.email AS member_email,
-        fh.level + 1 AS level,
-        fh.path || ft.member_id AS path,
-        fh.path_names || u.full_name AS path_names
-      FROM family_trees ft
-      JOIN users u ON u.id = ft.member_id
-      JOIN family_hierarchy fh ON fh.member_id = ft.ancestor_id
-      WHERE ft.wedding_id = $1
-        AND NOT (ft.member_id = ANY(fh.path))  -- защита от циклов
-    )
-    SELECT
-      id,
-      wedding_id,
-      member_id,
-      ancestor_id,
-      kinship_rank,
-      custom_distance,
-      gift_obligation,
-      member_name,
-      member_email,
-      level,
-      array_to_string(path_names, ' → ') AS lineage
-    FROM family_hierarchy
-    ORDER BY level, member_name;
-  `;
-
-  const params = [weddingId];
-  if (memberId) {
-    params.push(Number(memberId));
-  }
-
-  const tree = await prisma.$queryRawUnsafe(sql, ...params);
-
-  // Группируем по уровням
+  // Рекурсивно строим иерархию в JavaScript
   const levelsMap = new Map();
-  for (const row of tree) {
-    const level = Number(row.level);
+  const processed = new Set();
+
+  function getDescendants(currentMemberId, level = 0, path = [], pathNames = []) {
+    if (processed.has(currentMemberId)) return;
+    processed.add(currentMemberId);
+
+    const fm = familyMembers.find(m => m.memberId === currentMemberId);
+    if (!fm) return;
+
+    const memberPathNames = [...pathNames, fm.member.fullName];
+
     if (!levelsMap.has(level)) {
       levelsMap.set(level, []);
     }
+
     levelsMap.get(level).push({
-      id: Number(row.id),
-      memberId: Number(row.member_id),
-      ancestorId: row.ancestor_id ? Number(row.ancestor_id) : null,
-      memberName: row.member_name,
-      memberEmail: row.member_email,
-      kinshipRank: row.kinship_rank,
-      customDistance: row.custom_distance ? Number(row.custom_distance) : null,
-      giftObligation: row.gift_obligation ? Number(row.gift_obligation) : null,
-      level: Number(row.level),
-      lineage: row.lineage,
+      id: fm.id,
+      memberId: fm.memberId,
+      ancestorId: fm.ancestorId,
+      memberName: fm.member.fullName,
+      memberEmail: fm.member.email,
+      kinshipRank: fm.kinshipRank,
+      customDistance: fm.customDistance,
+      giftObligation: fm.giftObligation,
+      level,
+      lineage: memberPathNames.join(' → '),
     });
+
+    // Находим всех детей (чьи ancestorId === currentMemberId)
+    const children = familyMembers.filter(m => m.ancestorId === currentMemberId);
+    for (const child of children) {
+      getDescendants(child.memberId, level + 1, [...path, currentMemberId], memberPathNames);
+    }
   }
 
-  // Преобразуем Map в массив уровней
+  // Определяем корневые элементы
+  let rootMembers;
+  if (memberId) {
+    // Если указан memberId, строим поддерево от указанного члена семьи
+    const specificMember = familyMembers.find(m => m.memberId === Number(memberId));
+    rootMembers = specificMember ? [specificMember] : [];
+
+    // Если includeCouple и couple не найден в поддереве, добавляем его виртуально
+    if ((includeCouple === 'true' || includeCouple === true) && wedding.coupleId !== Number(memberId)) {
+      const coupleIndex = familyMembers.findIndex(m => m.memberId === wedding.coupleId);
+      if (coupleIndex === -1) {
+        // Добавляем couple виртуально как корень
+        const virtualCouple = {
+          id: 0,
+          weddingId,
+          memberId: wedding.couple.id,
+          ancestorId: null,
+          member: { id: wedding.couple.id, fullName: wedding.couple.fullName, email: wedding.couple.email },
+          kinshipRank: null,
+          customDistance: null,
+          giftObligation: null,
+        };
+        familyMembers.unshift(virtualCouple);
+        rootMembers.unshift(virtualCouple);
+      }
+    }
+  } else {
+    // Находим всех, у кого нет ancestor (корни)
+    rootMembers = familyMembers.filter(m => m.ancestorId === null);
+
+    // Если includeCouple, проверяем что couple есть среди корней
+    if (includeCouple === 'true' || includeCouple === true) {
+      const coupleInRoot = rootMembers.find(m => m.memberId === wedding.coupleId);
+      if (!coupleInRoot) {
+        const virtualCouple = {
+          id: 0,
+          weddingId,
+          memberId: wedding.couple.id,
+          ancestorId: null,
+          member: { id: wedding.couple.id, fullName: wedding.couple.fullName, email: wedding.couple.email },
+          kinshipRank: null,
+          customDistance: null,
+          giftObligation: null,
+        };
+        familyMembers.unshift(virtualCouple);
+        rootMembers.unshift(virtualCouple);
+      }
+    }
+  }
+
+  // Рекурсивно обходим дерево от каждого корня
+  for (const root of rootMembers) {
+    getDescendants(root.memberId);
+  }
+
+  // Преобразуем уровни в массив
   const levels = [];
   for (const [level, members] of levelsMap) {
     levels.push({ level, members });
   }
   levels.sort((a, b) => a.level - b.level);
 
-  // Собираем статистику по тирам
+  // Собираем статистику по рангам
   const rankCount = {};
   let totalMembers = 0;
-  for (const row of tree) {
-    const rank = row.kinship_rank;
-    rankCount[rank] = (rankCount[rank] || 0) + 1;
-    totalMembers++;
+  for (const [, members] of levelsMap) {
+    for (const row of members) {
+      const rank = row.kinshipRank;
+      if (rank) {
+        rankCount[rank] = (rankCount[rank] || 0) + 1;
+      }
+      totalMembers++;
+    }
   }
 
   res.json({
@@ -154,14 +156,14 @@ export const getFamilyTreeRecursive = async (req, res) => {
       fullName: wedding.couple.fullName,
       email: wedding.couple.email,
     },
-    queryType: 'WITH RECURSIVE',
+    queryType: 'RECURSIVE_JS',
     levels,
     summary: {
       totalMembers,
       byRank: rankCount,
       maxDepth: levels.length > 0 ? levels[levels.length - 1].level : 0,
     },
-    tree,
+    tree: Array.from(levelsMap.values()).flat(),
   });
 };
 
@@ -365,7 +367,6 @@ export const addFamilyMember = async (req, res) => {
   let kinshipRank;
   let computedDistance = null;
 
-  // Если kinshipRank передан с фронта — используем его
   if (providedRank) {
     kinshipRank = providedRank;
   } else if (!ancestorId) {
@@ -410,7 +411,7 @@ export const addFamilyMember = async (req, res) => {
     }
   }
 
-    const familyMember = await prisma.familyTree.create({
+  const familyMember = await prisma.familyTree.create({
     data: {
       weddingId,
       memberId,
@@ -447,7 +448,6 @@ export const getMyFamilyWedding = async (req, res) => {
     throw new AppError('You are not a family member of any wedding', 404);
   }
 
-  // 🐛 FIX: Фильтруем пулы по приватности
   const privacyFilter = {
     OR: [
       { privacy: 'PUBLIC' },
@@ -583,7 +583,6 @@ export const removeFamilyMember = async (req, res) => {
   const weddingId = Number(req.params.weddingId);
   const memberId = Number(req.params.memberId);
 
-  
   const member = await prisma.familyTree.findFirst({
     where: { weddingId, memberId },
   });
@@ -591,7 +590,6 @@ export const removeFamilyMember = async (req, res) => {
   if (!member) {
     throw new AppError('Member not found in tree', 404);
   }
-
 
   const descendant = await prisma.familyTree.findFirst({
     where: { weddingId, ancestorId: memberId },
@@ -601,7 +599,7 @@ export const removeFamilyMember = async (req, res) => {
     throw new AppError('Cannot remove a member who has descendants. Re-assign their ancestorId first.', 400);
   }
 
-    await prisma.familyTree.delete({
+  await prisma.familyTree.delete({
     where: { id: member.id },
   });
 
@@ -616,4 +614,3 @@ export const removeFamilyMember = async (req, res) => {
 
   res.json({ message: 'Member removed from family tree' });
 };
-
