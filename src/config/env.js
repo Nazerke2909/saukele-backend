@@ -9,13 +9,16 @@ const envPath = join(__dirname, '../../.env');
 
 dotenv.config({ path: envPath });
 
+// Helper: treat empty string as undefined so .default() works
+const emptyStrToUndefined = z.preprocess((val) => (val === '' || val === null || val === undefined ? undefined : val), z.any());
+
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
   SECRET_KEY: z.string().min(16, 'SECRET_KEY must be at least 16 characters'),
-  ACCESS_TOKEN_EXPIRE_MINUTES: z.coerce.number().int().positive('ACCESS_TOKEN_EXPIRE_MINUTES must be a positive integer'),
-  REFRESH_TOKEN_EXPIRE_DAYS: z.coerce.number().int().positive('REFRESH_TOKEN_EXPIRE_DAYS must be a positive integer'),
-  FRONTEND_URL: z.string().url('FRONTEND_URL must be a valid URL'),
+  ACCESS_TOKEN_EXPIRE_MINUTES: emptyStrToUndefined.pipe(z.coerce.number().int().positive().default(15)),
+  REFRESH_TOKEN_EXPIRE_DAYS: emptyStrToUndefined.pipe(z.coerce.number().int().positive().default(7)),
+  FRONTEND_URL: emptyStrToUndefined.pipe(z.string().min(1, 'FRONTEND_URL is required').default('http://localhost:3000')),
   PORT: z.coerce.number().int().positive().default(3000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
