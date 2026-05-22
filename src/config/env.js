@@ -2,12 +2,19 @@ import dotenv from 'dotenv';
 import { z } from 'zod';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const envPath = join(__dirname, '../../.env');
 
-dotenv.config({ path: envPath });
+// Try to load .env file if it exists, but don't require it
+const envPath = join(__dirname, '../../.env');
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+  console.log(`[ENV] Loading from: ${envPath}`);
+} else {
+  console.log('[ENV] No .env file found, using environment variables only');
+}
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
@@ -38,8 +45,6 @@ const envSchema = z.object({
   MAILGUN_SMTP_USER: z.string().optional(),
   MAILGUN_SMTP_PASS: z.string().optional(),
 });
-
-console.log(`[ENV] Loading from: ${envPath}`);
 
 const parsed = envSchema.safeParse(process.env);
 
