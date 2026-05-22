@@ -4,6 +4,7 @@ import { ExpressAdapter } from '@bull-board/express';
 import { emailQueue, webhookQueue, cronQueue } from './queue.js';
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { createAuditLog } from '../service/auditService.js';
 
 const CRON_TASKS = {
   deadStockDecay: {
@@ -239,21 +240,13 @@ export async function triggerCronTask(req, res) {
 
   console.log(`[MANUAL_TRIGGER] Cron task "${type}" triggered manually (job #${job.id})`);
 
-  
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user.id,
-        action: 'QUEUE_TRIGGER',
-        entityType: 'Queue:cron',
-        entityId: Number(job.id),
-        newValue: {
-          type,
-          triggeredBy: user?.email || 'unknown',
-          timestamp: new Date().toISOString(),
-        },
-      },
+    await createAuditLog({
+      userId: req.user.id,
+      action: 'QUEUE_TRIGGER',
+      entityType: 'Queue:cron',
+      entityId: safeJobId(job.id),
+      newValue: { type, timestamp: new Date().toISOString() },
     });
   } catch (err) {
     console.error(`[MONITOR] Failed to log trigger:`, err.message);
@@ -265,27 +258,33 @@ export async function triggerCronTask(req, res) {
   });
 }
 
+/**
+ * Safely convert a Bull job ID to an integer.
+ * Bull repeatable jobs have string IDs like "repeat:hash:timestamp" which cannot be parsed as numbers.
+ */
+function safeJobId(jobId) {
+  const num = Number(jobId);
+  return Number.isNaN(num) ? 0 : num;
+}
+
 export async function logJobResult(queueName, job, status) {
   try {
-    
     const systemUser = await prisma.user.findFirst({
       where: { OR: [{ role: 'SUPER_ADMIN' }, { role: 'MODERATOR' }] },
       orderBy: { id: 'asc' },
     });
     const userId = systemUser?.id ?? 1;
 
-    await prisma.auditLog.create({
-      data: {
-        userId,
-        action: `QUEUE_${status.toUpperCase()}`,
-        entityType: `Queue:${queueName}`,
-        entityId: Number(job.id),
-        newValue: {
-          type: job.data?.type,
-          attemptsMade: job.attemptsMade,
-          timestamp: new Date().toISOString(),
-          failedReason: job.failedReason || null,
-        },
+    await createAuditLog({
+      userId,
+      action: `QUEUE_${status.toUpperCase()}`,
+      entityType: `Queue:${queueName}`,
+      entityId: safeJobId(job.id),
+      newValue: {
+        type: job.data?.type,
+        attemptsMade: job.attemptsMade,
+        timestamp: new Date().toISOString(),
+        failedReason: job.failedReason || null,
       },
     });
   } catch (err) {
