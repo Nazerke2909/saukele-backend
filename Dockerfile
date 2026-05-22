@@ -49,7 +49,6 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 COPY src ./src
 COPY package.json ./
-COPY .env .env
 
 USER appuser
 

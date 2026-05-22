@@ -7,7 +7,7 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Try to load .env file if it exists, but don't require it
+// Try to load .env file if it exists
 const envPath = join(__dirname, '../../.env');
 if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath });
@@ -55,6 +55,14 @@ if (!parsed.success) {
   }
   process.exit(1);
 }
+
+// Debug: print which env vars we got (without secrets)
+console.log('[ENV] Environment loaded:');
+console.log(`  - PORT: ${parsed.data.PORT}`);
+console.log(`  - NODE_ENV: ${parsed.data.NODE_ENV}`);
+console.log(`  - DATABASE_URL: ${parsed.data.DATABASE_URL ? '✓ set' : '✗ missing'}`);
+console.log(`  - REDIS_URL: ${parsed.data.REDIS_URL ? '✓ set' : '✗ missing'}`);
+console.log(`  - SECRET_KEY: ${parsed.data.SECRET_KEY ? '✓ set' : '✗ missing'}`);
 
 if (parsed.data.MAILGUN_SMTP_USER) {
   console.log('[ENV] ✅ Mailgun configured:');
